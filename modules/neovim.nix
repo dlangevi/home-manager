@@ -25,7 +25,7 @@
   home.activation.cloneNeovimConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     NVIM_CONFIG="${config.xdg.configHome}/nvim"
     if [ ! -d "$NVIM_CONFIG" ]; then
-      run ${pkgs.git}/bin/git clone https://github.com/dlangevi/dotconfig.git "$NVIM_CONFIG"
+      run ${pkgs.git}/bin/git clone https://github.com/dlangevi/nvim.git "$NVIM_CONFIG"
     fi
   '';
 }

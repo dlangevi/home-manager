@@ -126,7 +126,7 @@ home-manager switch
 
 ## Neovim config
 
-The neovim Lua config lives in a separate repo: [github.com/dlangevi/dotconfig](https://github.com/dlangevi/dotconfig)
+The neovim Lua config lives in a separate repo: [github.com/dlangevi/nvim](https://github.com/dlangevi/nvim)
 
 It is automatically cloned to `~/.config/nvim/` on first `home-manager switch` if the directory doesn't exist. After that, manage it independently:
 
