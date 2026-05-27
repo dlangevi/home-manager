@@ -5,7 +5,8 @@ NixOS home-manager configuration for dlangevi. Manages shell (zsh), tmux, git, n
 ## Structure
 
 ```
-home.nix              # Entry point — imports all modules
+flake.nix             # Flake entry point — exposes #base and #dev profiles
+home.nix              # Base module aggregator — imports all modules
 modules/
   packages.nix        # Portable CLI tools (ripgrep, fd, bat, fzf, zoxide, gh, htop, claude-code)
   zsh.nix             # Zsh + oh-my-zsh + fzf + EDITOR env var
@@ -13,6 +14,12 @@ modules/
   git.nix             # Git + GitHub CLI
   neovim.nix          # Neovim + auto-clone config from github.com/dlangevi/nvim
 ```
+
+Profiles:
+- `#base` — base unix configs only (nvim, tmux, git, zsh, CLI tools).
+- `#dev`  — base + the dldev `claude-session` binary, pulled in via dldev's exported
+  home module (`inputs.dldev.homeModules.default`). Use this where you want the dldev
+  toolchain; run `nix develop ~/auto/dldev` for the Rust build toolchain.
 
 ## Setup on WSL
 
@@ -67,7 +74,10 @@ git clone git@github.com:dlangevi/home-manager.git ~/.config/home-manager
 ### 6. Apply
 
 ```bash
-home-manager switch -b backup
+# base + dldev tooling
+home-manager switch -b backup --flake ~/.config/home-manager#dev
+# or, base configs only:
+home-manager switch -b backup --flake ~/.config/home-manager#base
 ```
 
 The `-b backup` flag moves any conflicting existing files to `*.backup` instead of failing.
@@ -109,14 +119,14 @@ If home-manager is already installed as a NixOS module, you may need to remove i
 After editing any module:
 
 ```bash
-home-manager switch
+home-manager switch --flake ~/.config/home-manager#dev
 ```
 
-To update packages to latest versions:
+To update packages to latest versions (bumps the pinned flake inputs):
 
 ```bash
-nix-channel --update
-home-manager switch
+nix flake update
+home-manager switch --flake ~/.config/home-manager#dev
 ```
 
 ## Neovim config
