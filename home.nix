@@ -7,7 +7,6 @@
     ./modules/tmux.nix
     ./modules/git.nix
     ./modules/neovim.nix
-    ./modules/desktop.nix
   ];
 
   home.username = "dlangevi";

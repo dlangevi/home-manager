@@ -2,6 +2,7 @@
 
 {
   home.sessionPath = [ "$HOME/.local/bin" ];
+  home.sessionVariables.EDITOR = "nvim";
 
   programs.fzf.enableZshIntegration = true;
 

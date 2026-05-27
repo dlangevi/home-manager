@@ -7,15 +7,11 @@ NixOS home-manager configuration for dlangevi. Manages shell (zsh), tmux, git, n
 ```
 home.nix              # Entry point — imports all modules
 modules/
-  packages.nix        # System packages (CLI tools, GUI apps)
-  zsh.nix             # Zsh + oh-my-zsh + fzf
+  packages.nix        # Portable CLI tools (ripgrep, fd, bat, fzf, zoxide, gh, htop, claude-code)
+  zsh.nix             # Zsh + oh-my-zsh + fzf + EDITOR env var
   tmux.nix            # Tmux (nix-native, no TPM)
   git.nix             # Git + GitHub CLI
-  neovim.nix          # Neovim + auto-clone config from github.com/dlangevi/dotconfig
-  desktop.nix         # Desktop entries, session vars, custom scripts
-scripts/
-  aoe2url             # AoE2 URL protocol handler
-  captureage          # CaptureAge launcher for AoE2
+  neovim.nix          # Neovim + auto-clone config from github.com/dlangevi/nvim
 ```
 
 ## Setup on WSL
@@ -82,7 +78,6 @@ This will:
 - Configure tmux with vim-tmux-navigator and yank plugins
 - Set up git and gh CLI
 - Clone neovim config from `github.com/dlangevi/dotconfig` into `~/.config/nvim/` (if it doesn't already exist)
-- Symlink custom scripts into `~/.local/bin/`
 
 ### 7. Set zsh as default shell
 
