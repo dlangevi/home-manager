@@ -69,6 +69,9 @@
       bind-key -r C-k resize-pane -U
       bind-key -r C-l resize-pane -R
 
+      # Claude session jump (prefix + f)
+      bind-key f run-shell "claude-session jump"
+
       # Layouts
       bind o select-layout "active-only"
       bind M-- select-layout "even-vertical"
