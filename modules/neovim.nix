@@ -20,40 +20,11 @@
       fd
       tree-sitter
     ];
-    initLua = ''
-      -- Load the real config from the cloned nvim repo
-      local config_path = vim.fn.stdpath("config") .. "/lua"
-      vim.opt.rtp:prepend(vim.fn.stdpath("config"))
-
-      local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-      if not vim.loop.fs_stat(lazypath) then
-        vim.fn.system({
-          "git",
-          "clone",
-          "--filter=blob:none",
-          "https://github.com/folke/lazy.nvim.git",
-          "--branch=stable",
-          lazypath,
-        })
-      end
-      vim.opt.rtp:prepend(lazypath)
-
-      vim.g.mapleader = " "
-      vim.g.maplocalleader = " "
-      vim.opt.termguicolors = true
-
-      require('lazy').setup('plugins', {
-        change_detection = {
-          enabled = true,
-          notify = false,
-        },
-        performance = {
-          cache = {
-            enabled = true
-          }
-        }
-      })
-    '';
+    # NOTE: We deliberately do NOT set extraLuaConfig / initLua here.
+    # The full config (including init.lua) is owned by the cloned
+    # dlangevi/nvim repo at $XDG_CONFIG_HOME/nvim (see activation below).
+    # Generating an init.lua here would make home-manager symlink it into
+    # the same path and collide with the git clone.
   };
 
   home.activation.cloneNeovimConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
