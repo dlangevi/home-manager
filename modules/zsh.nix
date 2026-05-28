@@ -19,6 +19,7 @@
     };
     shellAliases = {
       tmac = "tmux new -A -s";
+      hms = ''home-manager switch --extra-experimental-features "nix-command flakes" --flake ~/auto/dldev#suspense'';
     };
     initContent = ''
       [[ -f ~/.zshenv.local ]] && source ~/.zshenv.local
