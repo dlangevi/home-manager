@@ -19,7 +19,6 @@
     };
     shellAliases = {
       tmac = "tmux new -A -s";
-      hms = "home-manager switch --flake ~/auto/dldev#suspense";
     };
     initContent = ''
       [[ -f ~/.zshenv.local ]] && source ~/.zshenv.local
