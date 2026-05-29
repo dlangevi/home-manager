@@ -7,6 +7,14 @@
     settings.user.email = "dlangevi@uwaterloo.ca";
   };
 
+  programs.delta = {
+    enable = true;
+    options = {
+      navigate = true;
+      side-by-side = false;
+    };
+  };
+
   programs.gh = {
     enable = true;
     settings = {

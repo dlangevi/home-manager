@@ -70,7 +70,7 @@
       bind-key -r C-l resize-pane -R
 
       # Claude session jump (prefix + f)
-      bind-key f run-shell "claude-session jump"
+      bind-key f run-shell "agent-session jump"
 
       # Layouts
       bind o select-layout "active-only"

@@ -7,7 +7,7 @@ Two parallel home-manager configs exist on this machine and have drifted:
 - `~/.config/home-manager` — channels-based (`home.nix` + `modules/`). Read by bare
   `home-manager switch`. Currently broken (nixpkgs 24.11 vs home-manager 25.11 skew).
 - `~/auto/dldev` — a flake with its own stale `homeConfigurations.suspense` (a
-  pre-slim fork still carrying GUI/gaming packages), plus the `claude-session` Rust
+  pre-slim fork still carrying GUI/gaming packages), plus the `agent-session` Rust
   crate and a Rust devShell.
 
 `home-manager switch --flake .#suspense` only ever worked when run from inside
@@ -23,7 +23,7 @@ can optionally layer in the dldev tooling — with dldev owning its own bootstra
 - **dldev exports a home-manager module** (Approach A) — it owns what it installs, so
   enabling it is self-bootstrapping and future dldev tools need no dotfiles-repo change.
 - **dldev payload is binary-only.** Enabling the layer installs the prebuilt
-  `claude-session` binary. The Rust build toolchain (cargo, rustc, clippy, rustfmt,
+  `agent-session` binary. The Rust build toolchain (cargo, rustc, clippy, rustfmt,
   pkg-config) stays in dldev's existing `devShells.default`, entered via `nix develop`.
 - **Use-based profiles, not per-machine.** Two outputs:
   - `#base` — base unix configs only.
@@ -40,7 +40,7 @@ can optionally layer in the dldev tooling — with dldev owning its own bootstra
 
 ```nix
 homeModules.default = { pkgs, ... }: {
-  home.packages = [ self.packages.${pkgs.stdenv.hostPlatform.system}.claude-session ];
+  home.packages = [ self.packages.${pkgs.stdenv.hostPlatform.system}.agent-session ];
 };
 ```
 
@@ -95,22 +95,22 @@ Pinned by `flake.lock`, identical across machines, no channel/`NIX_PATH` involve
 - `home.nix` — base entry point aggregating the modules (unchanged).
 - `flake.nix` (dotfiles) — defines inputs, `mkHome`, and the `base`/`dev` outputs. What:
   the single entry point. Depends on: nixpkgs, home-manager, optionally dldev.
-- `dldev:homeModules.default` — the dldev payload. What: add `claude-session` to
-  `home.packages`. Depends on: dldev's own `packages.<system>.claude-session`.
+- `dldev:homeModules.default` — the dldev payload. What: add `agent-session` to
+  `home.packages`. Depends on: dldev's own `packages.<system>.agent-session`.
 
 ## Out of scope
 
 - Deleting/refactoring dldev's stale `home/` tree (separate change).
-- Moving the `claude-session` crate (it stays in dldev).
+- Moving the `agent-session` crate (it stays in dldev).
 - The `home-manager switch` shorthand alias (separate TODO, depends on final attr names).
 - Resolving uncommitted `modules/neovim.nix` changes (separate, pre-existing).
 
 ## Success criteria
 
 1. `nix flake check ~/.config/home-manager` passes.
-2. `home-manager switch --flake ~/.config/home-manager#base` succeeds and `claude-session`
+2. `home-manager switch --flake ~/.config/home-manager#base` succeeds and `agent-session`
    is NOT on `PATH`.
-3. `home-manager switch --flake ~/.config/home-manager#dev` succeeds and `claude-session`
+3. `home-manager switch --flake ~/.config/home-manager#dev` succeeds and `agent-session`
    IS on `PATH`; nvim/tmux/git/cli tools present in both.
 4. `flake.lock` pins nixpkgs to 25.11 and home-manager to release-25.11.
 5. `nix develop ~/auto/dldev` still provides the Rust toolchain.
