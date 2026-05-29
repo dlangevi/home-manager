@@ -13,5 +13,7 @@
     gh
     htop
     claude-code
+    cargo
+    rustc
   ];
 }

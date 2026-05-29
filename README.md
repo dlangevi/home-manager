@@ -17,7 +17,7 @@ modules/
 
 Profiles:
 - `#base` — base unix configs only (nvim, tmux, git, zsh, CLI tools).
-- `#dev`  — base + the dldev `claude-session` binary, pulled in via dldev's exported
+- `#dev`  — base + the dldev `agent-session` binary, pulled in via dldev's exported
   home module (`inputs.dldev.homeModules.default`). Use this where you want the dldev
   toolchain; run `nix develop ~/auto/dldev` for the Rust build toolchain.
 

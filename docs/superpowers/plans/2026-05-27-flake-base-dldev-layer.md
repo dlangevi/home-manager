@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the broken channels/dual-config setup with one flake in `~/.config/home-manager` exposing `#base` and `#dev` profiles, where `#dev` layers in dldev's `claude-session` binary via a home module dldev exports.
+**Goal:** Replace the broken channels/dual-config setup with one flake in `~/.config/home-manager` exposing `#base` and `#dev` profiles, where `#dev` layers in dldev's `agent-session` binary via a home module dldev exports.
 
-**Architecture:** `~/auto/dldev` gains a `homeModules.default` output that adds its prebuilt `claude-session` binary to `home.packages`. The dotfiles flake takes dldev as an optional input and composes two `homeConfigurations`: `base` (existing modules only) and `dev` (base + dldev module). Inputs pin nixpkgs `nixos-25.11` and home-manager `release-25.11`.
+**Architecture:** `~/auto/dldev` gains a `homeModules.default` output that adds its prebuilt `agent-session` binary to `home.packages`. The dotfiles flake takes dldev as an optional input and composes two `homeConfigurations`: `base` (existing modules only) and `dev` (base + dldev module). Inputs pin nixpkgs `nixos-25.11` and home-manager `release-25.11`.
 
 **Tech Stack:** Nix flakes, home-manager (standalone), existing `home.nix` + `modules/`.
 
@@ -33,7 +33,7 @@ Inside the returned attribute set (the `{ ... }` block that currently holds
 ```nix
       homeModules.default = { pkgs, ... }: {
         home.packages = [
-          self.packages.${pkgs.stdenv.hostPlatform.system}.claude-session
+          self.packages.${pkgs.stdenv.hostPlatform.system}.agent-session
         ];
       };
 ```
@@ -47,7 +47,7 @@ Expected: a `homeModules` entry with `default` listed.
 
 ```bash
 git -C ~/auto/dldev add flake.nix
-git -C ~/auto/dldev commit -m "feat: export homeModules.default for claude-session binary
+git -C ~/auto/dldev commit -m "feat: export homeModules.default for agent-session binary
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -113,7 +113,7 @@ Expected: `nixos-25.11` then `release-25.11` (ref may appear under `.locked.ref`
 - [ ] **Step 1: Run `nix flake check`**
 
 Run: `cd ~/.config/home-manager && nix flake check 2>&1 | tail -20`
-Expected: no errors. (If `claude-session` fails to build with a `cargoHash`
+Expected: no errors. (If `agent-session` fails to build with a `cargoHash`
 mismatch under nixpkgs 25.11, update `cargoHash` in `~/auto/dldev/flake.nix` to the
 hash Nix reports, re-commit Task 1's file, then re-run.)
 
@@ -140,12 +140,12 @@ Expected: "Activating ..." completes with no error.
 
 - [ ] **Step 2: Verify base tools and the dldev binary are present**
 
-Run: `for b in nvim tmux git rg fd claude-session; do printf '%s -> ' "$b"; command -v "$b" || echo MISSING; done`
-Expected: all resolve to nix store paths; `claude-session` present.
+Run: `for b in nvim tmux git rg fd agent-session; do printf '%s -> ' "$b"; command -v "$b" || echo MISSING; done`
+Expected: all resolve to nix store paths; `agent-session` present.
 
 - [ ] **Step 3: Verify `#base` excludes the dldev binary (build-time profile check)**
 
-Run: `nix build ~/.config/home-manager#homeConfigurations.base.activationPackage --no-link --print-out-paths | xargs -I{} sh -c 'ls {}/home-path/bin/claude-session 2>/dev/null && echo PRESENT || echo "absent (correct)"'`
+Run: `nix build ~/.config/home-manager#homeConfigurations.base.activationPackage --no-link --print-out-paths | xargs -I{} sh -c 'ls {}/home-path/bin/agent-session 2>/dev/null && echo PRESENT || echo "absent (correct)"'`
 Expected: `absent (correct)`.
 
 - [ ] **Step 4: Verify the dldev devShell still provides the Rust toolchain**
@@ -167,7 +167,7 @@ cd ~/.config/home-manager
 git add flake.nix flake.lock
 git commit -m "feat: add flake with #base and #dev profiles
 
-#dev layers dldev's claude-session via its exported home module.
+#dev layers dldev's agent-session via its exported home module.
 Pins nixpkgs nixos-25.11 and home-manager release-25.11.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
@@ -198,7 +198,7 @@ home-manager switch --flake ~/.config/home-manager#dev
 ```
 
 Add one line under "Structure" noting `flake.nix` is the entry point exposing
-`#base` and `#dev`, and that `#dev` pulls in dldev's `claude-session` binary.
+`#base` and `#dev`, and that `#dev` pulls in dldev's `agent-session` binary.
 
 - [ ] **Step 2: Commit**
 
@@ -219,7 +219,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 - dotfiles flake, inputs, mkHome, base/dev outputs → Task 2.
 - 25.11 / release-25.11 pins → Task 2 Step 3.
 - `nix flake check` passes (success criterion 1) → Task 3 Step 1.
-- `#base` excludes / `#dev` includes claude-session (criteria 2, 3) → Task 4 Steps 2-3.
+- `#base` excludes / `#dev` includes agent-session (criteria 2, 3) → Task 4 Steps 2-3.
 - base tools present in both (criterion 3) → Task 4 Step 2 + Task 3 base build.
 - lockfile pins (criterion 4) → Task 2 Step 3.
 - devShell toolchain intact (criterion 5) → Task 4 Step 4.
