@@ -23,8 +23,9 @@
     in
     {
       homeConfigurations = {
-        base = mkHome [ ./home.nix ];
-        dev  = mkHome [ ./home.nix dldev.homeModules.default ];
+        base     = mkHome [ ./home.nix ];
+        dev      = mkHome [ ./home.nix dldev.homeModules.default ];
+        personal = mkHome [ ./home.nix dldev.homeModules.default ./modules/aoe2.nix ];
       };
     };
 }
