@@ -1,6 +1,27 @@
 { pkgs, ... }:
 
+let
+  # Cross-platform clipboard copy: reads stdin, writes to system clipboard.
+  # Picks the right backend based on session env (Wayland / X11 / WSL).
+  clipboardCopy = pkgs.writeShellApplication {
+    name = "clipboard-copy";
+    runtimeInputs = with pkgs; [ wl-clipboard xsel ];
+    text = ''
+      if [ -n "''${WAYLAND_DISPLAY:-}" ]; then
+        wl-copy
+      elif [ -n "''${DISPLAY:-}" ]; then
+        xsel -i --clipboard
+      else
+        cat >/dev/null
+        echo "clipboard-copy: no clipboard backend available" >&2
+        exit 1
+      fi
+    '';
+  };
+in
 {
+  home.packages = [ clipboardCopy ];
+
   programs.tmux = {
     enable = true;
     prefix = "C-a";
@@ -25,8 +46,13 @@
       set-option -g repeat-time 2000
       setw -g aggressive-resize on
 
+      # Mouse selection -> tmux buffer with notification
+      set -g mouse on
+      bind -T copy-mode-vi MouseDragEnd1Pane send -X copy-pipe-no-clear "${clipboardCopy}/bin/clipboard-copy; tmux display-message 'Copied to clipboard + tmux buffer'"
+      bind -T copy-mode    MouseDragEnd1Pane send -X copy-pipe-no-clear "${clipboardCopy}/bin/clipboard-copy; tmux display-message 'Copied to clipboard + tmux buffer'"
+
       # Copy mode
-      bind -T copy-mode-vi y send -X copy-pipe-no-clear "xsel -i --clipboard"
+      bind -T copy-mode-vi y send -X copy-pipe-no-clear "${clipboardCopy}/bin/clipboard-copy"
 
       # Prefix double-tap for last window
       bind-key a send-prefix
