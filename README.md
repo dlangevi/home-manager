@@ -5,7 +5,7 @@ NixOS home-manager configuration for dlangevi. Manages shell (zsh), tmux, git, n
 ## Structure
 
 ```
-flake.nix             # Flake entry point — exposes #base and #dev profiles
+flake.nix             # Flake entry point — exposes #base, #dev, and #personal profiles
 home.nix              # Base module aggregator — imports all modules
 modules/
   packages.nix        # Portable CLI tools (ripgrep, fd, bat, fzf, zoxide, gh, htop, claude-code)
@@ -13,13 +13,16 @@ modules/
   tmux.nix            # Tmux (nix-native, no TPM)
   git.nix             # Git + GitHub CLI
   neovim.nix          # Neovim + auto-clone config from github.com/dlangevi/nvim
+  aoe2.nix            # Personal-only: AoE2 URL handler desktop entry (aoe2de://)
 ```
 
 Profiles:
-- `#base` — base unix configs only (nvim, tmux, git, zsh, CLI tools).
-- `#dev`  — base + the dldev `agent-session` binary, pulled in via dldev's exported
+- `#base`     — base unix configs only (nvim, tmux, git, zsh, CLI tools).
+- `#dev`      — base + the dldev `agent-session` binary, pulled in via dldev's exported
   home module (`inputs.dldev.homeModules.default`). Use this where you want the dldev
   toolchain; run `nix develop ~/auto/dldev` for the Rust build toolchain.
+- `#personal` — dev + machine-specific extras for the home/gaming box (AoE2 URL handler).
+  Anything that should not appear on work machines goes here.
 
 ## Setup on WSL
 
