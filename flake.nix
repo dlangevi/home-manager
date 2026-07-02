@@ -17,8 +17,11 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
+      username = builtins.getEnv "USER";
+      homeDirectory = builtins.getEnv "HOME";
       mkHome = modules: home-manager.lib.homeManagerConfiguration {
         inherit pkgs modules;
+        extraSpecialArgs = { inherit username homeDirectory; };
       };
     in
     {

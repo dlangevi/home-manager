@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, username, homeDirectory, ... }:
 
 {
   imports = [
@@ -9,8 +9,8 @@
     ./modules/neovim.nix
   ];
 
-  home.username = "dlangevi";
-  home.homeDirectory = "/home/dlangevi";
+  home.username = username;
+  home.homeDirectory = homeDirectory;
   home.stateVersion = "25.05";
 
   programs.home-manager.enable = true;
