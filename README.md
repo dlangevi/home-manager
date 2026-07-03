@@ -5,7 +5,7 @@ NixOS home-manager configuration for dlangevi. Manages shell (zsh), tmux, git, n
 ## Structure
 
 ```
-flake.nix             # Flake entry point — exposes #base, #dev, and #personal profiles
+flake.nix             # Flake entry point
 home.nix              # Base module aggregator — imports all modules
 modules/
   packages.nix        # Portable CLI tools (ripgrep, fd, bat, fzf, zoxide, gh, htop, claude-code)
@@ -13,16 +13,10 @@ modules/
   tmux.nix            # Tmux (nix-native, no TPM)
   git.nix             # Git + GitHub CLI
   neovim.nix          # Neovim + auto-clone config from github.com/dlangevi/nvim
-  aoe2.nix            # Personal-only: AoE2 URL handler desktop entry (aoe2de://)
+  aoe2.nix            # AoE2 URL handler desktop entry (aoe2de://) — conditionally enabled
 ```
 
-Profiles:
-- `#base`     — base unix configs only (nvim, tmux, git, zsh, CLI tools).
-- `#dev`      — base + the dldev `agent-session` binary, pulled in via dldev's exported
-  home module (`inputs.dldev.homeModules.default`). Use this where you want the dldev
-  toolchain; run `nix develop ~/auto/dldev` for the Rust build toolchain.
-- `#personal` — dev + machine-specific extras for the home/gaming box (AoE2 URL handler).
-  Anything that should not appear on work machines goes here.
+Features are selected during `bootstrap init`; no need to manually choose profiles.
 
 ## Setup on WSL
 
@@ -50,60 +44,43 @@ Verify:
 nix --version
 ```
 
-### 3. Add channels
+### 3. Clone this repo
 
 ```bash
-nix-channel --add https://github.com/nix-community/home-manager/archive/master.tar.gz home-manager
-nix-channel --add https://channels.nixos.org/nixpkgs-unstable unstable
-nix-channel --update
-```
+# Back up any default config home-manager already generated
+mv ~/.config/home-manager ~/.config/home-manager.default 2>/dev/null || true
 
-### 4. Install home-manager
-
-```bash
-nix-shell '<home-manager>' -A install
-```
-
-### 5. Clone this repo
-
-```bash
-# Back up the default config home-manager generated
-mv ~/.config/home-manager ~/.config/home-manager.default
-
-# Clone
 git clone git@github.com:dlangevi/home-manager.git ~/.config/home-manager
+cd ~/.config/home-manager
 ```
 
-### 6. Apply
+### 4. Register this machine and apply
 
 ```bash
-# base + dldev tooling
-home-manager switch -b backup --flake ~/.config/home-manager#dev
-# or, base configs only:
-home-manager switch -b backup --flake ~/.config/home-manager#base
+./bootstrap init
 ```
 
-The `-b backup` flag moves any conflicting existing files to `*.backup` instead of failing.
+`init` will:
 
-This will:
-- Install all packages
-- Set up zsh with oh-my-zsh
-- Configure tmux with vim-tmux-navigator and yank plugins
-- Set up git and gh CLI
-- Clone neovim config from `github.com/dlangevi/dotconfig` into `~/.config/nvim/` (if it doesn't already exist)
+- Ask yes/no for each optional feature (`base` is always on).
+- Write your machine's entry to `machines.nix`.
+- Commit the registration.
+- Run the first `home-manager switch`.
 
-### 7. Set zsh as default shell
+After it finishes, push the registration commit:
 
 ```bash
-# Find the nix-managed zsh path
-which zsh
+git push
+```
 
-# Add it to allowed shells and set as default
+### 5. Set zsh as default shell
+
+```bash
 command -v zsh | sudo tee -a /etc/shells
-chsh -s $(command -v zsh)
+chsh -s "$(command -v zsh)"
 ```
 
-### 8. Local secrets
+### 6. Local secrets
 
 Create `~/.zshenv.local` for machine-specific environment variables (not tracked by git):
 
@@ -113,23 +90,30 @@ export ASANA_TOKEN="your-token-here"
 
 ## Setup on NixOS
 
-On NixOS, nix is already installed. Start from step 3 (channels).
+On NixOS, Nix is already installed. Start from step 3 of the WSL setup (Clone this repo).
 
-If home-manager is already installed as a NixOS module, you may need to remove it from your system config first and use standalone mode instead.
+If home-manager is already installed as a NixOS module, remove it from the system config first — this flake uses standalone mode.
 
 ## Updating
 
-After editing any module:
+Everyday:
 
 ```bash
-home-manager switch --flake ~/.config/home-manager#dev
+./bootstrap upgrade
 ```
 
-To update packages to latest versions (bumps the pinned flake inputs):
+Refresh pinned inputs first (nixpkgs, home-manager, dldev), then switch:
 
 ```bash
-nix flake update
-home-manager switch --flake ~/.config/home-manager#dev
+./bootstrap upgrade --update
+```
+
+`nix flake update` writes to `flake.lock`; commit it with a follow-up commit if you want the update to persist across machines:
+
+```bash
+git add flake.lock
+git commit -m "chore: refresh flake inputs"
+git push
 ```
 
 ## Neovim config

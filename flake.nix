@@ -19,16 +19,18 @@
       pkgs = nixpkgs.legacyPackages.${system};
       username = builtins.getEnv "USER";
       homeDirectory = builtins.getEnv "HOME";
-      mkHome = modules: home-manager.lib.homeManagerConfiguration {
-        inherit pkgs modules;
+
+      features = import ./features.nix { inherit dldev; };
+      machines = import ./machines.nix;
+
+      mkHome = featureNames: home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = builtins.concatMap (name: features.${name}) featureNames;
         extraSpecialArgs = { inherit username homeDirectory; };
       };
     in
     {
-      homeConfigurations = {
-        base     = mkHome [ ./home.nix ];
-        dev      = mkHome [ ./home.nix dldev.homeModules.default ];
-        personal = mkHome [ ./home.nix dldev.homeModules.default ./modules/aoe2.nix ];
-      };
+      homeConfigurations =
+        builtins.mapAttrs (_: featureNames: mkHome featureNames) machines;
     };
 }
