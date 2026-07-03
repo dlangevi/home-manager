@@ -7,6 +7,8 @@
     ./modules/tmux.nix
     ./modules/git.nix
     ./modules/neovim.nix
+    ./modules/keepassxc.nix
+    ./modules/syncthing.nix
   ];
 
   home.username = username;
