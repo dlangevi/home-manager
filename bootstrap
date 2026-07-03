@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# TODO(bootstrap-nix): install Nix if not present. Currently the script
+# assumes `nix` is on PATH.
+
+usage() {
+  cat <<'EOF'
+Usage:
+  ./bootstrap init                Register this machine (interactive)
+  ./bootstrap upgrade             home-manager switch for this machine
+  ./bootstrap upgrade --update    Also run 'nix flake update' first
+EOF
+}
+
+require_nix() {
+  if ! command -v nix >/dev/null; then
+    echo "nix is not installed. Install Nix first (see README) and re-run." >&2
+    exit 1
+  fi
+}
+
+require_flake_root() {
+  if [[ ! -f flake.nix ]]; then
+    echo "Run this from the home-manager repo root." >&2
+    exit 1
+  fi
+}
+
+get_hostname() {
+  local h
+  h=$(hostname)
+  if [[ "$h" == *\"* || "$h" == *\\* || "$h" == *$'\n'* ]]; then
+    echo "Hostname \"$h\" contains invalid characters (quote, backslash, or newline)." >&2
+    exit 1
+  fi
+  printf '%s' "$h"
+}
+
+machine_registered() {
+  local host=$1 result
+  result=$(nix eval --impure --json --file machines.nix \
+    --apply "x: builtins.hasAttr \"$host\" x")
+  [[ "$result" == "true" ]]
+}
+
+machine_features() {
+  local host=$1
+  nix eval --impure --raw --file machines.nix \
+    --apply "x: builtins.concatStringsSep \" \" x.\"$host\""
+}
+
+feature_catalog() {
+  nix eval --impure --raw --file features.nix \
+    --apply 'f:
+      let attrs = f { dldev = null; };
+      in builtins.concatStringsSep "\n" (builtins.attrNames attrs)'
+}
+
+do_init() {
+  require_nix
+  require_flake_root
+  local host
+  host=$(get_hostname)
+
+  if machine_registered "$host"; then
+    local existing
+    existing=$(machine_features "$host")
+    echo "$host is already registered as [ $existing ]." >&2
+    echo "Use ./bootstrap upgrade to apply changes, or edit machines.nix to modify the feature list." >&2
+    exit 1
+  fi
+
+  local features=("base")
+  local feat answer
+  # `|| [[ -n "$feat" ]]` handles feature_catalog's final line lacking a
+  # trailing newline (nix eval --raw emits the string as-is).
+  while IFS= read -r feat || [[ -n "$feat" ]]; do
+    [[ -z "$feat" ]] && continue
+    [[ "$feat" == "base" ]] && continue
+    read -r -p "Include $feat? [y/N]: " answer </dev/tty
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+      features+=("$feat")
+    fi
+  done < <(feature_catalog)
+
+  local features_nix=""
+  local f
+  for f in "${features[@]}"; do
+    features_nix+="\"$f\" "
+  done
+
+  local new_content
+  new_content=$(nix eval --impure --raw --expr "
+    import ./scripts/machines-write.nix {
+      machines = import ./machines.nix;
+      host = \"$host\";
+      features = [ $features_nix];
+    }
+  ")
+  printf '%s' "$new_content" > machines.nix
+
+  local feature_list="${features[*]}"
+  git add machines.nix
+  git commit -m "chore: register $host with features $feature_list"
+
+  if ! home-manager switch --impure --flake ".#$host"; then
+    echo "Registration committed but switch failed. Fix the issue and run './bootstrap upgrade'," >&2
+    echo "or undo with 'git reset --soft HEAD~1'." >&2
+    exit 1
+  fi
+  echo "Registered. Run 'git push' when ready."
+}
+
+do_upgrade() {
+  local do_update=0
+  if [[ $# -ge 1 ]]; then
+    if [[ "$1" == "--update" ]]; then
+      do_update=1
+    else
+      usage >&2
+      exit 2
+    fi
+  fi
+  require_nix
+  require_flake_root
+  local host
+  host=$(get_hostname)
+  if ! machine_registered "$host"; then
+    echo "$host is not registered. Run './bootstrap init' first." >&2
+    exit 1
+  fi
+  if [[ $do_update -eq 1 ]]; then
+    nix flake update
+  fi
+  home-manager switch --impure --flake ".#$host"
+}
+
+case "${1:-}" in
+  init)
+    shift
+    do_init "$@"
+    ;;
+  upgrade)
+    shift
+    do_upgrade "$@"
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac
