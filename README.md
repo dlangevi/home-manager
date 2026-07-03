@@ -13,10 +13,12 @@ modules/
   tmux.nix            # Tmux (nix-native, no TPM)
   git.nix             # Git + GitHub CLI
   neovim.nix          # Neovim + auto-clone config from github.com/dlangevi/nvim
-  aoe2.nix            # AoE2 URL handler desktop entry (aoe2de://) — conditionally enabled
+  aoe2.nix            # AoE2 URL handler desktop entry (aoe2de://) — opt-in feature
 ```
 
 Features are selected during `bootstrap init`; no need to manually choose profiles.
+
+**Note for people who aren't me:** the `dldev` feature pulls in a private local flake input (`path:/home/dlangevi/auto/dldev`) and will fail to evaluate if that path doesn't exist. If you're cloning this repo as a reference or template, select only `base` (and optionally `aoe2`) during `bootstrap init`.
 
 ## Setup on WSL
 
