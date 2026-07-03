@@ -32,5 +32,11 @@
     {
       homeConfigurations =
         builtins.mapAttrs (_: featureNames: mkHome featureNames) machines;
+
+      # Expose the home-manager CLI so the bootstrap script can invoke it
+      # via `nix run .#home-manager` on machines that don't have it
+      # installed yet.
+      packages.${system}.home-manager =
+        home-manager.packages.${system}.home-manager;
     };
 }

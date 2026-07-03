@@ -60,6 +60,13 @@ feature_catalog() {
       in builtins.concatStringsSep "\n" (builtins.attrNames attrs)'
 }
 
+# Invoke home-manager via `nix run` so the script works on a fresh machine
+# that only has `nix` installed, and stays pinned to the version tracked
+# in flake.lock even when a stale binary is on PATH.
+hm() {
+  nix run --impure ".#home-manager" -- "$@"
+}
+
 do_init() {
   require_nix
   require_flake_root
@@ -107,7 +114,7 @@ do_init() {
   git add machines.nix
   git commit -m "chore: register $host with features $feature_list"
 
-  if ! home-manager switch --impure --flake ".#$host"; then
+  if ! hm switch --impure --flake ".#$host"; then
     echo "Registration committed but switch failed. Fix the issue and run './bootstrap upgrade'," >&2
     echo "or undo with 'git reset --soft HEAD~1'." >&2
     exit 1
@@ -136,7 +143,7 @@ do_upgrade() {
   if [[ $do_update -eq 1 ]]; then
     nix flake update
   fi
-  home-manager switch --impure --flake ".#$host"
+  hm switch --impure --flake ".#$host"
 }
 
 case "${1:-}" in
