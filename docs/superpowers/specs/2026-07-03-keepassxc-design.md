@@ -105,6 +105,11 @@ Subsequent machines:
 5. Open KeePassXC, point it at `~/Sync/keepassxc/passwords.kdbx`, unlock with
    the master password.
 
+Conflict handling: if two machines edit the database while both are offline,
+Syncthing produces a `sync-conflict-<timestamp>-<device>.kdbx` file alongside
+the original. Open both databases in KeePassXC and use
+`Database → Merge from database…` to reconcile, then delete the conflict file.
+
 ## Placement in the flake
 
 `home.nix` imports both new modules alongside the existing set:
@@ -139,8 +144,8 @@ After `home-manager switch --flake .`:
 ## Risks and trade-offs
 
 - **State-file conflicts.** Two machines editing the DB while both are offline
-  produces a Syncthing conflict file. Mitigation: KeePassXC's merge feature;
-  documented in the bootstrap notes.
+  produces a Syncthing conflict file. Mitigation: KeePassXC's merge feature.
+  See the conflict-handling note in the bootstrap section.
 - **Device pairing is imperative.** Device IDs live only in each Syncthing
   instance's local state, not in the Nix expression. A machine rebuild requires
   re-pairing via the web UI. This is an accepted trade-off to keep device IDs
