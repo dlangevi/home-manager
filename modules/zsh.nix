@@ -19,7 +19,7 @@
     };
     shellAliases = {
       tmac = "tmux new -A -s";
-      hms = ''nix flake update dldev --flake ~/.config/home-manager 2>/dev/null; home-manager switch --extra-experimental-features "nix-command flakes" --flake ~/.config/home-manager#dev'';
+      hms = ''~/.config/home-manager/bootstrap upgrade'';
       as-deploy = "~/auto/dldev/scripts/as-deploy";
     };
     initContent = ''
