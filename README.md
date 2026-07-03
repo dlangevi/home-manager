@@ -90,7 +90,7 @@ export ASANA_TOKEN="your-token-here"
 
 ## Setup on NixOS
 
-On NixOS, Nix is already installed. Start from step 5 of the WSL setup (Clone this repo).
+On NixOS, Nix is already installed. Start from step 3 of the WSL setup (Clone this repo).
 
 If home-manager is already installed as a NixOS module, remove it from the system config first — this flake uses standalone mode.
 

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Run from the script's own directory so the alias works from any CWD.
+cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+
 # TODO(bootstrap-nix): install Nix if not present. Currently the script
 # assumes `nix` is on PATH.
 
@@ -40,7 +43,7 @@ get_hostname() {
 machine_registered() {
   local host=$1 result
   result=$(nix eval --impure --json --file machines.nix \
-    --apply "x: builtins.hasAttr \"$host\" x")
+    --apply "x: builtins.hasAttr \"$host\" x") || return 1
   [[ "$result" == "true" ]]
 }
 
