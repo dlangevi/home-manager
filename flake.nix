@@ -16,7 +16,10 @@
   outputs = { nixpkgs, home-manager, dldev, ... }:
     let
       system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
+      pkgs = import nixpkgs {
+        inherit system;
+        config.allowUnfree = true;
+      };
       username = builtins.getEnv "USER";
       homeDirectory = builtins.getEnv "HOME";
 

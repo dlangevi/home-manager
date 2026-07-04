@@ -1,4 +1,4 @@
-{ config, pkgs, lib, username, homeDirectory, ... }:
+{ config, pkgs, username, homeDirectory, ... }:
 
 {
   imports = [
@@ -15,9 +15,6 @@
   home.stateVersion = "25.11";
 
   programs.home-manager.enable = true;
-
-  nixpkgs.config.allowUnfreePredicate = pkg:
-    builtins.elem (lib.getName pkg) [ "claude-code" ];
 
   home.packages = with pkgs; [
     ripgrep
