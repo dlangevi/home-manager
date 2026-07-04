@@ -1,6 +1,9 @@
 { dldev, ... }:
 {
-  base  = [ ./home.nix ];
-  dldev = [ dldev.homeModules.default ];
-  aoe2  = [ ./modules/aoe2.nix ];
+  base         = [ ./modules/base.nix ];
+  dev          = [ ./modules/dev.nix ];
+  dldev        = [ dldev.homeModules.default ];
+  desktop-apps = [ ./modules/desktop-apps.nix ];
+  gaming       = [ ./modules/gaming.nix ];
+  media        = [ ./modules/media.nix ];
 }
