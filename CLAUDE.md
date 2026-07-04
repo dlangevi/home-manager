@@ -68,3 +68,4 @@ gamescope, firewall integration.
 4. **Is it already installed in NixOS?** Prefer the home-manager home
    if the package is user-scoped; remove the NixOS entry to avoid the
    duplicate.
+5. **Is it an unfree package?** The flake sets `nixpkgs.config.allowUnfree = true` globally in `flake.nix`; unfree packages install without additional configuration. Make sure the license aligns with your intent — there's no scope-limit gate.
