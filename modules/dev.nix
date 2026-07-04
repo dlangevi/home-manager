@@ -9,7 +9,6 @@
     rustfmt
     pkg-config
     gcc
-    gcc14
     cmake
     gnumake
     python3
