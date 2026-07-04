@@ -41,6 +41,7 @@ home-manager. If splitting buys nothing, keep it wherever it already lives.
   (alacritty, calibre, filezilla, anki, spectacle, kdeconnect).
 - `gaming` — game runtimes (wine, protontricks, prismlauncher,
   vintagestory, osu-lazer) plus the AoE2 URL handler and its shell scripts.
+- `streaming` — streaming/rhythm-game rig (obs-studio, itgmania, smplayer, mpv, gparted, zenity). Used by the `dance` machine.
 - `media` — minimal streaming-box set (mpv). Firefox comes from NixOS.
 
 Steam itself stays in NixOS as `programs.steam.enable` — 32-bit libs,

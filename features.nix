@@ -6,4 +6,5 @@
   desktop-apps = [ ./modules/desktop-apps.nix ];
   gaming       = [ ./modules/gaming.nix ];
   media        = [ ./modules/media.nix ];
+  streaming    = [ ./modules/streaming.nix ];
 }
