@@ -18,5 +18,6 @@
     anki-bin
     kdePackages.spectacle
     kdePackages.kdeconnect-kde
+    zen-browser
   ];
 }
