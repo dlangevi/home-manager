@@ -1,3 +1,3 @@
 {
-  "suspense" = [ "base" "dldev" "aoe2" ];
+  "suspense" = [ "base" "dldev" ];
 }
