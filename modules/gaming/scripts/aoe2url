@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# On NixOS: uses protontricks-launch --no-bwrap instead of calling Proton directly,
+# because NixOS's non-FHS layout prevents Proton from finding system libraries when invoked directly.
+
+APPID=813780
+STEAM_PATH="${STEAM_PATH:-$HOME/.local/share/Steam}"
+
+export PROTON_LOG=1
+export STEAMAPPS="$STEAM_PATH/steamapps"
+export STEAM_COMPAT_DATA_PATH="$STEAMAPPS/compatdata/$APPID"
+export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_PATH"
+export WINEPREFIX="$STEAMAPPS/compatdata/$APPID/pfx"
+
+protontricks-launch --no-bwrap --appid "$APPID" \
+  "$STEAMAPPS/common/AoE2DE/Tools_Builds/AOEURLHelper.exe" "$@"
