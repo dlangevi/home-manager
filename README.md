@@ -6,19 +6,22 @@ NixOS home-manager configuration for dlangevi. Manages shell (zsh), tmux, git, n
 
 ```
 flake.nix             # Flake entry point
-home.nix              # Base module aggregator — imports all modules
+modules/base.nix       # Base feature aggregator — imports leaf modules + baseline CLI packages
 modules/
-  packages.nix        # Portable CLI tools (ripgrep, fd, bat, fzf, zoxide, gh, htop, claude-code)
+  base.nix            # Base feature — user identity + leaf modules + CLI tools
+  dev.nix             # Rust/C/Python/Node toolchain
+  desktop-apps.nix    # GUI apps for a workstation
+  gaming.nix          # Wine/proton stack + AoE2 URL handler
+  media.nix           # Streaming-box essentials (mpv)
   zsh.nix             # Zsh + oh-my-zsh + fzf + EDITOR env var
   tmux.nix            # Tmux (nix-native, no TPM)
   git.nix             # Git + GitHub CLI
   neovim.nix          # Neovim + auto-clone config from github.com/dlangevi/nvim
-  aoe2.nix            # AoE2 URL handler desktop entry (aoe2de://) — opt-in feature
 ```
 
 Features are selected during `bootstrap init`; no need to manually choose profiles.
 
-**Note for people who aren't me:** the `dldev` feature pulls in a private local flake input (`path:/home/dlangevi/auto/dldev`) and will fail to evaluate if that path doesn't exist. If you're cloning this repo as a reference or template, select only `base` (and optionally `aoe2`) during `bootstrap init`.
+**Note for people who aren't me:** the `dldev` feature pulls in a private local flake input (`path:/home/dlangevi/auto/dldev`) and will fail to evaluate if that path doesn't exist. If you're cloning this repo as a reference or template, select only `base` (and optionally `gaming`, `desktop-apps`, `dev`, `media`) during `bootstrap init`.
 
 ## Setup on WSL
 

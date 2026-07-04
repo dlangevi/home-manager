@@ -1,3 +1,5 @@
 {
-  "suspense" = [ "base" "dldev" "aoe2" ];
+  "console"  = [ "base" "media" ];
+  "dance"    = [ "base" ];
+  "suspense" = [ "base" "dev" "dldev" "desktop-apps" "gaming" ];
 }
