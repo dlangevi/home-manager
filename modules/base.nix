@@ -16,6 +16,28 @@
 
   programs.home-manager.enable = true;
 
+  programs.ssh = {
+    enable = true;
+    addKeysToAgent = "yes";
+    matchBlocks = {
+      "console" = {
+        hostname = "console";
+        user = username;
+        identityFile = "~/.ssh/id_ed25519";
+      };
+      "dance" = {
+        hostname = "dance";
+        user = username;
+        identityFile = "~/.ssh/id_ed25519";
+      };
+      "suspense" = {
+        hostname = "suspense";
+        user = username;
+        identityFile = "~/.ssh/id_ed25519";
+      };
+    };
+  };
+
   nix.gc = {
     automatic = true;
     dates = "weekly";

@@ -13,6 +13,7 @@ Usage:
   ./bootstrap init                Register this machine (interactive)
   ./bootstrap upgrade             home-manager switch for this machine
   ./bootstrap upgrade --update    Also run 'nix flake update' first
+  ./bootstrap check-nixos         Verify /etc/nixos/configuration.nix has required sections
 EOF
 }
 
@@ -122,6 +123,10 @@ do_init() {
   echo "Registered. Run 'git push' when ready."
 }
 
+do_check_nixos() {
+  exec python3 "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/scripts/check-nixos"
+}
+
 do_upgrade() {
   local do_update=0
   if [[ $# -ge 1 ]]; then
@@ -154,6 +159,9 @@ case "${1:-}" in
   upgrade)
     shift
     do_upgrade "$@"
+    ;;
+  check-nixos)
+    do_check_nixos
     ;;
   *)
     usage >&2
