@@ -18,6 +18,7 @@
     anki-bin
     kdePackages.spectacle
     kdePackages.kdeconnect-kde
+    kdePackages.filelight
     zen-browser
   ];
 }
