@@ -46,11 +46,16 @@
   programs.nix-ld.enable = true;
   programs.nix-ld.libraries = with pkgs; [ stdenv.cc.cc ];
 
-  # Gaming
-  programs.steam.gamescopeSession = {
+  programs.steam = {
     enable = true;
-    args = [ ];
-    steamArgs = [ ];
+    remotePlay.openFirewall = true;
+    dedicatedServer.openFirewall = true;
+    localNetworkGameTransfers.openFirewall = true;
+    gamescopeSession = {
+      enable = true;
+      args = [ ];
+      steamArgs = [ ];
+    };
   };
 
   fonts.packages = with pkgs; [
