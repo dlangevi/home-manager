@@ -39,9 +39,14 @@
     packages = with pkgs; [ kdePackages.kate ];
   };
 
-  # Steam extras
-  programs.steam.protontricks.enable = true;
-  programs.steam.extraCompatPackages = [ pkgs.proton-ge-bin ];
+  programs.steam = {
+    enable = true;
+    remotePlay.openFirewall = true;
+    dedicatedServer.openFirewall = true;
+    localNetworkGameTransfers.openFirewall = true;
+    protontricks.enable = true;
+    extraCompatPackages = [ pkgs.proton-ge-bin ];
+  };
 
   # CPU freq cap for Ryzen 5 3550H thermal
   powerManagement.cpuFreqGovernor = "schedutil";
