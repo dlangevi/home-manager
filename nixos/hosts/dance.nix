@@ -4,12 +4,10 @@
   networking.hostName = "dance";
   system.stateVersion = "24.11";
 
-  services.xserver.displayManager.sddm.enable = true;
-  services.xserver.displayManager.defaultSession = "plasma";
-  services.xserver.displayManager.sddm.wayland.enable = true;
-
-  services.xserver.displayManager.autoLogin.enable = true;
-  services.xserver.displayManager.autoLogin.user = "dance";
+  services.displayManager.autoLogin = {
+    enable = true;
+    user = "dance";
+  };
 
   services.udev.extraRules = ''
       SUBSYSTEMS=="hidraw", ACTION=="add", MODE="0660", GROUP="dance"
@@ -21,7 +19,6 @@
     shell = pkgs.zsh;
     description = "dance";
     extraGroups = [ "networkmanager" "wheel" "dance" ];
-    packages = [ ];
   };
 
   environment.systemPackages = with pkgs; [ unzip ];

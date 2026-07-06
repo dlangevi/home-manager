@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ pkgs, lib, ... }:
 
 {
   networking.hostName = "suspense";
@@ -20,13 +20,9 @@
   services.gvfs.enable = true;
   services.udisks2.enable = true;
 
-  # NVIDIA on Wayland is flaky — stay on X11 by default
+  # NVIDIA on Wayland is flaky — stay on X11
   services.displayManager.defaultSession = "plasmax11";
-  services.displayManager.sddm = {
-    enable = true;
-    wayland.enable = false;
-  };
-  services.displayManager.autoLogin.enable = false;
+  services.displayManager.sddm.wayland.enable = false;
 
   # udev hidraw rule (dlangevi is in group "console" historically)
   services.udev.extraRules = ''
@@ -50,11 +46,7 @@
     enable = true;
     remotePlay.openFirewall = true;
     localNetworkGameTransfers.openFirewall = true;
-    gamescopeSession = {
-      enable = true;
-      args = [ ];
-      steamArgs = [ ];
-    };
+    gamescopeSession.enable = true;
   };
 
   fonts.packages = with pkgs; [
@@ -70,7 +62,6 @@
   environment.systemPackages = with pkgs; [
     (pkgs.ollama.override { acceleration = "cuda"; })
     steam-run
-    steam
     kdePackages.partitionmanager
     gparted
   ];

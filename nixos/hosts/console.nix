@@ -15,14 +15,10 @@
     };
   };
 
-  # Display manager
-  services.xserver.displayManager.sddm.enable = true;
-  services.xserver.displayManager.defaultSession = "plasma";
-  services.xserver.displayManager.sddm.wayland.enable = true;
-
-  # Auto-login as console
-  services.xserver.displayManager.autoLogin.enable = true;
-  services.xserver.displayManager.autoLogin.user = "console";
+  services.displayManager.autoLogin = {
+    enable = true;
+    user = "console";
+  };
 
   # udev hidraw rule
   services.udev.extraRules = ''
@@ -63,13 +59,14 @@
     };
   };
 
+  fonts.packages = with pkgs; [ noto-fonts-cjk-sans ];
+
   environment.systemPackages = with pkgs; [
     cmake
     gnumake
     nodejs_22
     python3
     gparted
-    noto-fonts-cjk-sans
     config.boot.kernelPackages.cpupower
   ];
 }
