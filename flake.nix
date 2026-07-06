@@ -65,5 +65,9 @@
       # installed yet.
       packages.${system}.home-manager =
         home-manager.packages.${system}.home-manager;
+
+      devShells.${system}.default = pkgs.mkShell {
+        packages = with pkgs; [ nixfmt-rfc-style nil gh ];
+      };
     };
 }
