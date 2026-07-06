@@ -22,4 +22,13 @@
   };
 
   environment.systemPackages = with pkgs; [ unzip ];
+
+  system.autoUpgrade = {
+    enable = true;
+    flake = "github:dlangevi/home-manager";
+    flags = [ "--impure" "-L" ];
+    dates = "Sun 03:00";
+    randomizedDelaySec = "45min";
+    allowReboot = false;
+  };
 }
