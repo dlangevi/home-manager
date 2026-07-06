@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 {
   # Boot
@@ -40,6 +40,10 @@
   services.desktopManager.plasma6.enable = true;
   services.xserver.xkb.layout = "us";
   services.xserver.xkb.variant = "";
+
+  services.displayManager.sddm.enable = true;
+  services.displayManager.sddm.wayland.enable = lib.mkDefault true;
+  services.displayManager.defaultSession = lib.mkDefault "plasma";
 
   # Printing + SSH
   services.printing.enable = true;
