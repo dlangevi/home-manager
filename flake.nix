@@ -36,6 +36,15 @@
       features = import ./features.nix { inherit dldev; };
       machines = import ./machines.nix;
 
+      mkNixos = host: nixpkgs.lib.nixosSystem {
+        inherit system;
+        modules = [
+          ./nixos/common.nix
+          ./nixos/hosts/${host}.nix
+          /etc/nixos/hardware-configuration.nix
+        ];
+      };
+
       mkHome = featureNames: home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         modules = builtins.concatMap (name: features.${name}) featureNames;
@@ -45,6 +54,9 @@
     {
       homeConfigurations =
         builtins.mapAttrs (_: featureNames: mkHome featureNames) machines;
+
+      nixosConfigurations =
+        builtins.mapAttrs (host: _: mkNixos host) machines;
 
       # Expose the home-manager CLI so the bootstrap script can invoke it
       # via `nix run .#home-manager` on machines that don't have it
