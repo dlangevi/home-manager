@@ -36,6 +36,8 @@
       features = import ./features.nix { inherit dldev; };
       machines = import ./machines.nix;
 
+      # `/etc/nixos/hardware-configuration.nix` is read from the host running
+      # the build. Only build `.#nixosConfigurations.<host>` on that host.
       mkNixos = host: nixpkgs.lib.nixosSystem {
         inherit system;
         modules = [
