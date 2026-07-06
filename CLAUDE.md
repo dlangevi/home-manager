@@ -6,6 +6,11 @@ feature catalog. Machines are registered in `machines.nix`; features live in
 
 ## 1. NixOS vs home-manager
 
+The flake now owns both NixOS and home-manager layers. NixOS modules live
+under `nixos/` (`common.nix` + `hosts/<name>.nix`). Home-manager modules
+still live under `modules/`. The split rule below still governs where a
+piece of config belongs — only the storage location has changed.
+
 Put a program in **NixOS** (`/etc/nixos/configuration.nix`) if any of:
 - It needs root or affects other users.
 - It is a systemd **system** unit.
@@ -65,7 +70,9 @@ gamescope, firewall integration.
 2. **Will any machine want it that doesn't already select the feature?**
    If yes, either promote to `base` or split the feature.
 3. **Does it need root, a system service, hardware access, or 32-bit
-   libs?** If yes, it belongs in `/etc/nixos/configuration.nix` instead.
+   libs?** If yes, add it to `nixos/common.nix` (if all machines want it)
+   or the relevant `nixos/hosts/<name>.nix`. Otherwise it belongs in a
+   home-manager feature.
 4. **Is it already installed in NixOS?** Prefer the home-manager home
    if the package is user-scoped; remove the NixOS entry to avoid the
    duplicate.
