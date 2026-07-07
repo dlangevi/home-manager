@@ -36,6 +36,17 @@
       features = import ./features.nix { inherit dldev; };
       machines = import ./machines.nix;
 
+      # `/etc/nixos/hardware-configuration.nix` is read from the host running
+      # the build. Only build `.#nixosConfigurations.<host>` on that host.
+      mkNixos = host: nixpkgs.lib.nixosSystem {
+        inherit system;
+        modules = [
+          ./nixos/common.nix
+          ./nixos/hosts/${host}.nix
+          /etc/nixos/hardware-configuration.nix
+        ];
+      };
+
       mkHome = featureNames: home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         modules = builtins.concatMap (name: features.${name}) featureNames;
@@ -46,10 +57,17 @@
       homeConfigurations =
         builtins.mapAttrs (_: featureNames: mkHome featureNames) machines;
 
+      nixosConfigurations =
+        builtins.mapAttrs (host: _: mkNixos host) machines;
+
       # Expose the home-manager CLI so the bootstrap script can invoke it
       # via `nix run .#home-manager` on machines that don't have it
       # installed yet.
       packages.${system}.home-manager =
         home-manager.packages.${system}.home-manager;
+
+      devShells.${system}.default = pkgs.mkShell {
+        packages = with pkgs; [ nixfmt-rfc-style nil gh ];
+      };
     };
 }

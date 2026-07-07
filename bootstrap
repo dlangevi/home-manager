@@ -11,7 +11,7 @@ usage() {
   cat <<'EOF'
 Usage:
   ./bootstrap init                Register this machine (interactive)
-  ./bootstrap upgrade             home-manager switch for this machine
+  ./bootstrap upgrade             nixos-rebuild + home-manager switch for this machine
   ./bootstrap upgrade --update    Also run 'nix flake update' first
 EOF
 }
@@ -143,6 +143,14 @@ do_upgrade() {
   if [[ $do_update -eq 1 ]]; then
     nix flake update
   fi
+
+  # NixOS layer first (only on NixOS hosts — WSL/macOS have no /etc/nixos)
+  if [[ -f /etc/nixos/configuration.nix ]] || [[ -e /run/current-system/nixos-version ]]; then
+    echo "==> nixos-rebuild switch --flake .#$host"
+    sudo nixos-rebuild switch --flake ".#$host" --impure
+  fi
+
+  echo "==> home-manager switch --flake .#$host"
   hm switch --impure --flake ".#$host"
 }
 

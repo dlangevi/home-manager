@@ -16,10 +16,9 @@
 
   programs.home-manager.enable = true;
 
-  nix.gc = {
-    automatic = true;
-    dates = "weekly";
-    options = "--delete-older-than 14d";
+  programs.direnv = {
+    enable = true;
+    nix-direnv.enable = true;
   };
 
   home.packages = with pkgs; [
