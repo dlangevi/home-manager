@@ -8,6 +8,7 @@
     ./neovim.nix
     ./keepassxc.nix
     ./syncthing.nix
+    ./claude.nix
   ];
 
   home.username = username;
@@ -34,6 +35,5 @@
     unzip
     xclip
     cntr
-    claude-code
   ];
 }
