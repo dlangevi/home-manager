@@ -19,6 +19,6 @@
     kdePackages.spectacle
     kdePackages.kdeconnect-kde
     kdePackages.filelight
-    zen-browser
+    floorp-bin
   ];
 }

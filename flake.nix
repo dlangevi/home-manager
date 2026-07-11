@@ -12,13 +12,9 @@
       url = "path:/home/dlangevi/auto/dldev";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    zen-browser = {
-      url = "github:youwen5/zen-browser-flake";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
-  outputs = { nixpkgs, nixpkgs-unstable, home-manager, dldev, zen-browser, ... }:
+  outputs = { nixpkgs, nixpkgs-unstable, home-manager, dldev, ... }:
     let
       system = "x86_64-linux";
       pkgs-unstable = import nixpkgs-unstable { inherit system; config.allowUnfree = true; };
@@ -27,7 +23,6 @@
         config.allowUnfree = true;
         overlays = [(final: prev: {
           itgmania = pkgs-unstable.itgmania;
-          zen-browser = zen-browser.packages.${system}.default;
         })];
       };
       username = builtins.getEnv "USER";
