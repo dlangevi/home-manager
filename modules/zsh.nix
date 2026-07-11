@@ -19,7 +19,9 @@
     };
     shellAliases = {
       tmac = "tmux new -A -s";
-      hms = ''~/.config/home-manager/bootstrap upgrade'';
+      hms  = ''~/.config/home-manager/bootstrap upgrade hm'';
+      nrs  = ''~/.config/home-manager/bootstrap upgrade nixos'';
+      alls = ''~/.config/home-manager/bootstrap upgrade all'';
       as-deploy = "~/auto/dldev/scripts/as-deploy";
     };
     initContent = ''

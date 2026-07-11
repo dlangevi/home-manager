@@ -10,9 +10,12 @@ cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 usage() {
   cat <<'EOF'
 Usage:
-  ./bootstrap init                Register this machine (interactive)
-  ./bootstrap upgrade             nixos-rebuild + home-manager switch for this machine
-  ./bootstrap upgrade --update    Also run 'nix flake update' first
+  ./bootstrap init                     Register this machine (interactive)
+  ./bootstrap upgrade [target] [--update]
+      target = hm     (default) home-manager switch only
+             = nixos  nixos-rebuild switch only
+             = all    both layers
+      --update also runs 'nix flake update' first
 EOF
 }
 
@@ -124,14 +127,18 @@ do_init() {
 
 do_upgrade() {
   local do_update=0
-  if [[ $# -ge 1 ]]; then
-    if [[ "$1" == "--update" ]]; then
-      do_update=1
-    else
-      usage >&2
-      exit 2
-    fi
-  fi
+  local target="hm"
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --update) do_update=1 ;;
+      hm|nixos|all) target="$arg" ;;
+      *)
+        usage >&2
+        exit 2
+        ;;
+    esac
+  done
   require_nix
   require_flake_root
   local host
@@ -144,14 +151,24 @@ do_upgrade() {
     nix flake update
   fi
 
-  # NixOS layer first (only on NixOS hosts — WSL/macOS have no /etc/nixos)
+  local is_nixos=0
   if [[ -f /etc/nixos/configuration.nix ]] || [[ -e /run/current-system/nixos-version ]]; then
+    is_nixos=1
+  fi
+
+  if [[ "$target" == "nixos" || "$target" == "all" ]]; then
+    if [[ $is_nixos -eq 0 ]]; then
+      echo "This host is not NixOS — 'nixos' target is unavailable." >&2
+      exit 1
+    fi
     echo "==> nixos-rebuild switch --flake .#$host"
     sudo nixos-rebuild switch --flake ".#$host" --impure
   fi
 
-  echo "==> home-manager switch --flake .#$host"
-  hm switch --impure --flake ".#$host"
+  if [[ "$target" == "hm" || "$target" == "all" ]]; then
+    echo "==> home-manager switch --flake .#$host"
+    hm switch --impure --flake ".#$host"
+  fi
 }
 
 case "${1:-}" in
