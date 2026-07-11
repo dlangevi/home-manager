@@ -35,5 +35,6 @@
     unzip
     xclip
     cntr
+    jq
   ];
 }
