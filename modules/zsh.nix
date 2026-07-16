@@ -27,6 +27,9 @@
     initContent = ''
       [[ -f ~/.zshenv.local ]] && source ~/.zshenv.local
 
+      BAR=$(echo 🍏🍎🍐🍊🍋🍌🍉🍇🍓🫐🍈🍒🍑🥭🍍🥥🥝 | grep -o . | shuf -n1)
+      PROMPT="$BAR $PROMPT"
+
       tmux-session() {
         SESSIONNAME=''${1//./_}
         tmux has-session -t=$SESSIONNAME &> /dev/null
