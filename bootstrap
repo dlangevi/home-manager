@@ -15,7 +15,9 @@ Usage:
       target = hm     (default) home-manager switch only
              = nixos  nixos-rebuild switch only
              = all    both layers
-      --update also runs 'nix flake update' first
+      --update also refreshes flake inputs first (excludes nixpkgs-ollama,
+                which is pinned to avoid the CUDA rebuild; bump manually with
+                'nix flake lock --update-input nixpkgs-ollama')
 EOF
 }
 
@@ -148,7 +150,18 @@ do_upgrade() {
     exit 1
   fi
   if [[ $do_update -eq 1 ]]; then
-    nix flake update
+    # Update every root input except nixpkgs-ollama. Ollama's derivation
+    # triggers a multi-hour CUDA rebuild for sm_61 (Pascal / GTX 1060 on
+    # suspense); pinning its input means routine updates hit the store cache.
+    # Bump ollama manually with:
+    #   nix flake lock --update-input nixpkgs-ollama
+    local inputs
+    inputs=$(nix eval --raw --file flake.nix --apply \
+      'f: builtins.concatStringsSep " "
+            (builtins.filter (n: n != "nixpkgs-ollama")
+              (builtins.attrNames f.inputs))')
+    # shellcheck disable=SC2086
+    nix flake update $inputs
   fi
 
   local is_nixos=0

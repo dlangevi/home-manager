@@ -11,5 +11,9 @@ export STEAM_COMPAT_DATA_PATH="$STEAMAPPS/compatdata/$APPID"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_PATH"
 export WINEPREFIX="$STEAMAPPS/compatdata/$APPID/pfx"
 
+# AOEURLHelper.exe exits non-zero when the target lobby is stale/closed. That's
+# expected on a link-click — swallow it so kioclient's transient systemd unit
+# doesn't accumulate as a "failed" entry that shows up in the user-session
+# degraded report after every nixos-rebuild.
 protontricks-launch --no-bwrap --appid "$APPID" \
-  "$STEAMAPPS/common/AoE2DE/Tools_Builds/AOEURLHelper.exe" "$@"
+  "$STEAMAPPS/common/AoE2DE/Tools_Builds/AOEURLHelper.exe" "$@" || true

@@ -1,8 +1,15 @@
-{ pkgs, lib, ... }:
+{ pkgs, pkgs-ollama, lib, ... }:
 
 {
   networking.hostName = "suspense";
   system.stateVersion = "23.11";
+
+  services.sunshine = {
+    enable = true;
+    autoStart = true;
+    capSysAdmin = true;
+    openFirewall = true;
+  };
 
   networking.firewall = {
     enable = true;
@@ -60,9 +67,30 @@
   environment.variables.QT_IM_MODULE = lib.mkForce "";
 
   environment.systemPackages = with pkgs; [
-    (pkgs.ollama.override { acceleration = "cuda"; })
+    # GTX 1060 is Pascal (sm_61); nixpkgs default cudaArches starts at
+    # sm_75, so the cached binary panics with "no kernel image is
+    # available for execution on the device". Force a local rebuild
+    # that includes Pascal.
+    (pkgs-ollama.ollama.override {
+      acceleration = "cuda";
+      cudaArches = [ "sm_61" ] ++ pkgs-ollama.cudaPackages.flags.realArches;
+    })
     steam-run
     kdePackages.partitionmanager
     gparted
+    piper
   ];
+
+  services.ratbagd.enable = true;
+
+  # libratbag doesn't ship a device entry for the Kone Pure Ultra (usb:1e7d:2dd2).
+  # The Ultra uses the same protocol family as the original Kone Pure, so point
+  # it at the existing roccat-kone-pure driver via a local .device override.
+  environment.etc."libratbag/devices/roccat-kone-pure-ultra.device".text = ''
+    [Device]
+    Name=Roccat Kone Pure Ultra
+    DeviceMatch=usb:1e7d:2dd2
+    Driver=roccat-kone-pure
+    DeviceType=mouse
+  '';
 }
