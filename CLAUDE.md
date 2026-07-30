@@ -43,7 +43,7 @@ home-manager. If splitting buys nothing, keep it wherever it already lives.
   `path:~/auto/dldev`. Only on machines where that path exists.
 - `desktop-apps` — GUI workstation apps: chat (discord, signal, teams,
   zoom), media (spotify, obs, gimp, kdenlive, mpv, smplayer), utilities
-  (alacritty, calibre, filezilla, anki, spectacle, kdeconnect).
+  (alacritty, calibre, filezilla, anki, spectacle, kdeconnect, moonlight-qt).
 - `gaming` — game runtimes (wine, protontricks, prismlauncher,
   vintagestory, osu-lazer) plus the AoE2 URL handler and its shell scripts.
 - `streaming` — streaming/rhythm-game rig (obs-studio, itgmania, smplayer, mpv, gparted, zenity). Used by the `dance` machine.

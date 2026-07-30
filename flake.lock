@@ -7,8 +7,8 @@
         ]
       },
       "locked": {
-        "lastModified": 1783621956,
-        "narHash": "sha256-onrOYcQ7Z+NLuIeJ2+haTEyShq4nJ7a8t9kY0UlOoUI=",
+        "lastModified": 1783963102,
+        "narHash": "sha256-jn5s2pvAq7F47GrGvmTVIUec4h3QIluAyoy0VgUUr98=",
         "path": "/home/dlangevi/auto/dldev",
         "type": "path"
       },
@@ -54,6 +54,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-ollama": {
+      "locked": {
+        "lastModified": 1782847189,
+        "narHash": "sha256-twXPFqFsrrY5r28Zh7Homgcp2gUMBgQ6WDS98Q/3xFI=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "b6018f87da91d19d0ab4cf979885689b469cdd41",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-25.11",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "nixpkgs-unstable": {
       "locked": {
         "lastModified": 1782948114,
@@ -75,6 +91,7 @@
         "dldev": "dldev",
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs",
+        "nixpkgs-ollama": "nixpkgs-ollama",
         "nixpkgs-unstable": "nixpkgs-unstable"
       }
     }
