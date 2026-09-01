@@ -4,6 +4,7 @@
   dev          = [ ./modules/dev.nix ];
   dldev        = [ dldev.homeModules.default ];
   desktop-apps = [ ./modules/desktop-apps.nix ];
+  documents    = [ ./modules/documents.nix ];
   gaming       = [ ./modules/gaming.nix ];
   media        = [ ./modules/media.nix ];
   streaming    = [ ./modules/streaming.nix ];
