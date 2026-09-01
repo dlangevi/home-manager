@@ -9,6 +9,8 @@
     ./keepassxc.nix
     ./syncthing.nix
     ./claude.nix
+    ./input-method.nix
+    ./wezterm.nix
   ];
 
   home.username = username;

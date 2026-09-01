@@ -6,6 +6,12 @@
     defaultEditor = true;
     viAlias = true;
     vimAlias = true;
+    withPython3 = false;
+    withRuby = false;
+    # HM generates provider-disable directives into initLua, which would write
+    # to ~/.config/nvim/init.lua and collide with the cloned dlangevi/nvim repo.
+    # sideloadInitLua loads that content via wrapper --cmd instead of writing.
+    sideloadInitLua = true;
     extraPackages = with pkgs; [
       # Language servers
       lua-language-server

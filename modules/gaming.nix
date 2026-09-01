@@ -13,6 +13,8 @@ in
     protontricks
     vintagestory
     osu-lazer-bin
+    mgba
+    flips
   ] ++ [ aoe2url captureage ];
 
   xdg.desktopEntries.AoE2UrlHelper = {
