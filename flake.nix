@@ -16,9 +16,14 @@
       url = "path:/home/dlangevi/auto/dldev";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    plasma-manager = {
+      url = "github:nix-community/plasma-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
   };
 
-  outputs = { nixpkgs, nixpkgs-unstable, nixpkgs-ollama, home-manager, dldev, ... }:
+  outputs = { nixpkgs, nixpkgs-unstable, nixpkgs-ollama, home-manager, dldev, plasma-manager, ... }:
     let
       system = "x86_64-linux";
       pkgs-unstable = import nixpkgs-unstable { inherit system; config.allowUnfree = true; };
@@ -33,7 +38,7 @@
       username = builtins.getEnv "USER";
       homeDirectory = builtins.getEnv "HOME";
 
-      features = import ./features.nix { inherit dldev; };
+      features = import ./features.nix { inherit dldev plasma-manager; };
       machines = import ./machines.nix;
 
       # Hardware config comes from `nixos/hardware/<host>.nix` once it has been
