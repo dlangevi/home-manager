@@ -1,6 +1,8 @@
 { pkgs, ... }:
 
 {
+  imports = [ ../modules/media-audio.nix ];
+
   networking.hostName = "dance";
   system.stateVersion = "24.11";
 
