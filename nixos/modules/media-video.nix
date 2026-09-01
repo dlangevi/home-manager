@@ -1,22 +1,22 @@
-# Local streaming service: Jellyfin (video) + Navidrome (music).
+# Video streaming: Jellyfin.
 #
-# Two servers rather than one because the music library is 28k files / 263 GB,
-# which is past where Jellyfin's music handling is comfortable. Navidrome runs
-# in ~50 MB, speaks Subsonic natively, and streams FLAC untranscoded.
+# Audio used to live here too, but Navidrome moved to `dance` -- a Beelink SER8
+# that idles at 8-9 W against this box's 60-80 W and is already on 24/7. See
+# media-audio.nix. This host keeps video because it has the GPU.
 #
-# LAN only. Remote access via Tailscale is a later phase.
+# LAN plus tailnet only.
 { config, pkgs, lib, ... }:
 
 let
-  # Media lives under /home/dlangevi, which is 0700 -- the jellyfin and
-  # navidrome service users cannot traverse into it and would see nothing.
+  # Media lives under /home/dlangevi, which is 0700 -- the jellyfin service
+  # user cannot traverse into it and would see nothing.
   #
   # Bind mounts sidestep this: permission checks apply to the components of the
   # NEW path, not the original's parents. The alternative, chmod o+x on the home
   # directory, would weaken it for every service on the box to solve a problem
   # this solves cleanly.
   mediaRoot = "/home/dlangevi/storage";
-  libraries = [ "movies" "shows" "music" "recordings" ];
+  libraries = [ "movies" "shows" "recordings" ];
 
   bindMount = name: {
     name = "/srv/media/${name}";
@@ -36,7 +36,6 @@ let
   # only the two media ports are reachable, not every service on the box.
   tailnet = "100.64.0.0/10";
   jellyfinPort = 8096;
-  navidromePort = 4533;
 in
 {
   fileSystems = builtins.listToAttrs (map bindMount libraries);
@@ -46,19 +45,6 @@ in
     # Deliberately false: openFirewall opens on every interface. The LAN-scoped
     # rule below is the point.
     openFirewall = false;
-  };
-
-  services.navidrome = {
-    enable = true;
-    openFirewall = false;
-    settings = {
-      MusicFolder = "/srv/media/music";
-      Address = "0.0.0.0";
-      Port = navidromePort;
-      # 28k files: the first scan is long and I/O heavy. Full rescans only when
-      # tags change, not on every startup.
-      ScanSchedule = "@every 24h";
-    };
   };
 
   # jellyfin-ffmpeg needs the NVIDIA userspace to reach NVENC. /dev/nvidia* are
@@ -82,8 +68,6 @@ in
       "iptables -A nixos-fw -p tcp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
     in ''
       ${allow lanSubnet jellyfinPort}
-      ${allow lanSubnet navidromePort}
       ${allow tailnet jellyfinPort}
-      ${allow tailnet navidromePort}
     '';
 }

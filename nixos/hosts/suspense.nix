@@ -1,7 +1,7 @@
 { config, pkgs, pkgs-ollama, lib, ... }:
 
 {
-  imports = [ ../modules/media-server.nix ];
+  imports = [ ../modules/media-video.nix ];
 
   networking.hostName = "suspense";
   system.stateVersion = "23.11";
