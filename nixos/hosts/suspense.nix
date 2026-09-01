@@ -1,6 +1,8 @@
 { config, pkgs, pkgs-ollama, lib, ... }:
 
 {
+  imports = [ ../modules/media-server.nix ];
+
   networking.hostName = "suspense";
   system.stateVersion = "23.11";
 
@@ -9,6 +11,13 @@
     autoStart = true;
     capSysAdmin = true;
     openFirewall = true;
+    settings = {
+      # Restrict capture to the 1440p monitor; the second display confuses
+      # single-screen Moonlight clients.
+      output_name = "DP-2";
+      resolutions = "[1280x720,1920x1080,2560x1440]";
+      fps = "[60,120]";
+    };
   };
 
   networking.firewall = {
@@ -59,6 +68,7 @@
   # udev hidraw rule (dlangevi is in group "console" historically)
   services.udev.extraRules = ''
       SUBSYSTEMS=="hidraw", ACTION=="add", MODE="0660", GROUP="console"
+      SUBSYSTEM=="sound", ACTION=="add", ATTRS{idVendor}=="8888", ATTRS{idProduct}=="1717", TAG+="systemd", ENV{SYSTEMD_WANTS}+="fosi-mc331-mixer.service"
   '';
 
   users.groups.console = { };
@@ -118,4 +128,49 @@
     Driver=roccat-kone-pure
     DeviceType=mouse
   '';
+
+  # The Fosi Audio MC331 reports a bogus USB volume-control range — the kernel
+  # logs "Unlikely big volume range (=4096), cval->res is probably wrong" — and
+  # the control is effectively unusable: PipeWire's mapping collapses most of
+  # the slider to a raw value of 0, i.e. silence. Take the hardware mixer out
+  # of the loop entirely and do volume in software.
+  #
+  # soft-mixer has to be set on the card as well as the node; setting it on the
+  # node alone leaves PipeWire still writing the hardware control.
+  services.pipewire.wireplumber.extraConfig."51-fosi-mc331-soft-mixer" = {
+    "monitor.alsa.rules" = [
+      {
+        matches = [
+          { "device.name" = "~alsa_card.usb-MV-SILICON_Fosi_Audio_MC331.*"; }
+          { "node.name" = "~alsa_output.usb-MV-SILICON_Fosi_Audio_MC331.*"; }
+        ];
+        actions.update-props = {
+          "api.alsa.soft-mixer" = true;
+        };
+      }
+    ];
+  };
+
+  # With soft-mixer on, nothing drives the hardware control any more, so it sits
+  # wherever it was left — which after a replug or a boot is 0. Pin it to max
+  # once, whenever the card appears. Card id "MC331" is stable; the numeric
+  # index is not.
+  systemd.services.fosi-mc331-mixer = {
+    description = "Pin the Fosi Audio MC331 hardware mixer to maximum";
+    serviceConfig = {
+      Type = "oneshot";
+      # The card can take a moment to expose its mixer controls after the
+      # udev add event, so retry briefly rather than failing the boot.
+      ExecStart = pkgs.writeShellScript "fosi-mc331-mixer" ''
+        for _ in $(seq 20); do
+          if ${pkgs.alsa-utils}/bin/amixer -c MC331 sset PCM 100% >/dev/null 2>&1; then
+            exit 0
+          fi
+          sleep 0.5
+        done
+        echo "MC331 mixer control never appeared" >&2
+        exit 1
+      '';
+    };
+  };
 }
