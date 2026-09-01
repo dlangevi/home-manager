@@ -49,6 +49,22 @@
   services.printing.enable = true;
   services.openssh.enable = true;
 
+  # mosh. The client ships with home-manager's `base` feature, but incoming
+  # sessions also need UDP 60000-61000 reachable. programs.mosh.enable would
+  # open that on every interface; scope it the same way the media services are
+  # scoped instead. mosh-server is spawned over SSH, hence openssh above.
+  networking.firewall.extraCommands =
+    let
+      lanSubnet = "10.0.70.0/24";
+      # Tailscale hands out addresses from the CGNAT range.
+      tailnet = "100.64.0.0/10";
+      allow = subnet:
+        "iptables -A nixos-fw -p udp -s ${subnet} --dport 60000:61000 -j nixos-fw-accept";
+    in ''
+      ${allow lanSubnet}
+      ${allow tailnet}
+    '';
+
   # Audio (pipewire; old-name pulseaudio option renamed to services.pulseaudio)
   services.pulseaudio.enable = false;
   security.rtkit.enable = true;
