@@ -32,6 +32,28 @@
       BAR=$(echo 🍏🍎🍐🍊🍋🍌🍉🍇🍓🫐🍈🍒🍑🥭🍍🥥🥝 | grep -o . | shuf -n1)
       PROMPT="$BAR $PROMPT"
 
+      # Show the hostname only when this shell is on the far end of an ssh or
+      # mosh connection. mosh-server drops SSH_*, so walk the process ancestry
+      # too (tmux hides the parent, so the env check alone is not enough).
+      # /proc rather than ps: same walk costs 0.4ms instead of 80ms of forks.
+      _is_remote_session() {
+        [[ -n $SSH_CONNECTION || -n $SSH_TTY || -n $SSH_CLIENT ]] && return 0
+        local pid=$PPID stat comm
+        repeat 10; do
+          [[ -r /proc/$pid/stat ]] || return 1
+          stat=$(</proc/$pid/stat)
+          comm=''${''${stat%\) *}#*\(}
+          [[ $comm == (mosh-server|sshd) ]] && return 0
+          pid=''${''${(z)''${stat##*\) }}[2]}
+          [[ $pid == 0 || $pid == 1 ]] && return 1
+        done
+        return 1
+      }
+      if _is_remote_session; then
+        PROMPT="%F{yellow}%m%f $PROMPT"
+      fi
+      unset -f _is_remote_session
+
       tmux-session() {
         local target name agent=0
         if [[ "$1" == "-a" || "$1" == "--agent" ]]; then
