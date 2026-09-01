@@ -25,7 +25,6 @@
       nrs  = ''~/.config/home-manager/bootstrap upgrade nixos'';
       alls = ''~/.config/home-manager/bootstrap upgrade all'';
       as-deploy = "~/auto/dldev/scripts/as-deploy";
-      update-twitch = "~/.config/home-manager/scripts/update-twitch-scriptlet.sh";
     };
     initContent = ''
       [[ -f ~/.zshenv.local ]] && source ~/.zshenv.local

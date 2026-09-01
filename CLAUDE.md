@@ -44,7 +44,8 @@ home-manager. If splitting buys nothing, keep it wherever it already lives.
 
 - `base` — CLI essentials (zsh, tmux, nvim, git, ripgrep, fd, bat, fzf,
   zoxide, gh, htop, btop, wget, unzip, xclip, cntr, claude-code) plus
-  keepassxc and syncthing. Also owns user identity. Every machine.
+  keepassxc, syncthing, and fcitx5 with the Chinese addon (pinyin).
+  Also owns user identity. Every machine.
 - `dev` — Rust / C / Python / Node toolchains (cargo, rustc,
   rust-analyzer, gcc, cmake, python3, nodejs, yarn, etc.). Machines that
   build software.
