@@ -38,5 +38,6 @@
     xclip
     cntr
     jq
+    mosh
   ];
 }
