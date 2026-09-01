@@ -7,11 +7,20 @@ feature catalog. Machines are registered in `machines.nix`; features live in
 ## 1. NixOS vs home-manager
 
 The flake now owns both NixOS and home-manager layers. NixOS modules live
-under `nixos/` (`common.nix` + `hosts/<name>.nix`). Home-manager modules
-still live under `modules/`. The split rule below still governs where a
-piece of config belongs — only the storage location has changed.
+under `nixos/` (`common.nix` + `hosts/<name>.nix` + `hardware/<name>.nix`).
+Home-manager modules still live under `modules/`. The split rule below still
+governs where a piece of config belongs — only the storage location has
+changed.
 
-Put a program in **NixOS** (`/etc/nixos/configuration.nix`) if any of:
+`nixos/hardware/<name>.nix` holds only hardware-detected facts (disks,
+kernel modules, microcode) — anything you'd *choose* rather than detect goes
+in `hosts/<name>.nix`. A host with that file checked in evaluates purely and
+can be built from anywhere; a host without one still falls back to reading
+`/etc/nixos/hardware-configuration.nix` off the build machine, so it must be
+built on that host with `--impure`. Only `suspense` is migrated so far.
+
+Put a program in **NixOS** (`nixos/common.nix` or `nixos/hosts/<name>.nix`)
+if any of:
 - It needs root or affects other users.
 - It is a systemd **system** unit.
 - It touches hardware, the kernel, or graphics (X, Wayland, GPU drivers,

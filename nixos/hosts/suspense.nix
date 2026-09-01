@@ -1,4 +1,4 @@
-{ pkgs, pkgs-ollama, lib, ... }:
+{ config, pkgs, pkgs-ollama, lib, ... }:
 
 {
   networking.hostName = "suspense";
@@ -26,6 +26,31 @@
   services.devmon.enable = true;
   services.gvfs.enable = true;
   services.udisks2.enable = true;
+
+  # GPU: GeForce GTX 1060 6GB (Pascal).
+  hardware.graphics.enable = true;
+  services.xserver.videoDrivers = [ "nvidia" ];
+
+  hardware.nvidia = {
+    modesetting.enable = true;
+
+    # Saves all of VRAM across suspend rather than the bare essentials, which
+    # avoids graphical corruption and app crashes on resume.
+    powerManagement.enable = true;
+    # Turing or newer only.
+    powerManagement.finegrained = false;
+
+    # The open kernel module supports Turing and newer; Pascal needs the
+    # proprietary one.
+    open = false;
+
+    nvidiaSettings = true;
+
+    # NVIDIA dropped Pascal in the 595.x branch, so `stable` (595.71.05 as of
+    # nixpkgs 26.05) probes the card and ignores it, leaving X with "no screens
+    # found". 580 is the legacy branch Pascal is supported through.
+    package = config.boot.kernelPackages.nvidiaPackages.legacy_580;
+  };
 
   # NVIDIA on Wayland is flaky — stay on X11
   services.displayManager.defaultSession = "plasmax11";
