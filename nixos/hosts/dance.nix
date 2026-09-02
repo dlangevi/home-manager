@@ -21,6 +21,11 @@
     shell = pkgs.zsh;
     description = "dance";
     extraGroups = [ "networkmanager" "wheel" "dance" ];
+    # suspense pushes the music library here over rsync. Password auth would
+    # stall the ~2,400 unattended per-artist invocations on a prompt.
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINsXz3cvNB2Hp9walgAmlqjPNkWgOKVgvtbKis1N0m/O dlangevi@uwaterloo.ca"
+    ];
   };
 
   environment.systemPackages = with pkgs; [ unzip ];
