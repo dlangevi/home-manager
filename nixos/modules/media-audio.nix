@@ -10,13 +10,20 @@
 { config, pkgs, lib, ... }:
 
 let
-  # /srv/media rather than under /home/dance, which is 0700 and would hide the
-  # library from the navidrome service user. Because the media is not inside a
-  # home directory here, this host needs none of the read-only bind mounts
-  # media-video.nix uses to work around exactly that problem.
+  # The library lives on the storage NVMe and is exposed read-only at
+  # /srv/media/music, which is what navidrome reads.
   #
-  # It also lands on the root NVMe (786 GB free) rather than the storage NVMe,
-  # whose remaining 400 GB is being eaten by OBS/ITG recordings.
+  # The indirection is necessary: /home/dance is 0700, so navidrome's
+  # DynamicUser cannot traverse into it. A bind mount sidesteps that because
+  # permission checks apply to the components of the NEW path, not the
+  # original's parents -- the same trick media-video.nix uses on suspense.
+  # chmod o+x on the home directory would be the alternative and would weaken
+  # it for every service on the box.
+  #
+  # It sits on the storage drive rather than root because the library is ~157 GB
+  # post-transcode and heading for ~780 GB, while root also carries the OS and
+  # 119 GB of itgmania.
+  storeDir = "/home/dance/storage/music";
   musicDir = "/srv/media/music";
 
   lanSubnet = "10.0.70.0/24";
@@ -31,8 +38,19 @@ in
   # to grant access to; dance owns the directory so rsync can write into it.
   systemd.tmpfiles.rules = [
     "d /srv/media 0755 root root -"
-    "d ${musicDir} 0755 dance users -"
+    "d ${storeDir} 0755 dance users -"
   ];
+
+  # Read-only: navidrome never writes to the library, and transfers target
+  # storeDir directly as user dance. `depends` is load-bearing -- without it
+  # the bind can run before the storage disk is mounted and would silently
+  # bind an empty directory, leaving navidrome with no library.
+  fileSystems.${musicDir} = {
+    device = storeDir;
+    fsType = "none";
+    options = [ "bind" "ro" ];
+    depends = [ "/home/dance/storage" ];
+  };
 
   services.navidrome = {
     enable = true;
