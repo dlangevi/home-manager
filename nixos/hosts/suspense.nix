@@ -1,10 +1,18 @@
 { config, pkgs, pkgs-ollama, lib, ... }:
 
 {
-  imports = [ ../modules/media-video.nix ];
-
   networking.hostName = "suspense";
   system.stateVersion = "23.11";
+
+  # Remote access. Jellyfin (the reason this was originally enabled) has
+  # moved to dance along with the media library, but keep suspense reachable
+  # over the tailnet regardless -- e.g. for Sunshine/Moonlight remote play.
+  services.tailscale = {
+    enable = true;
+    # Without this the daemon cannot accept inbound UDP on 41641, so peers
+    # fall back to DERP relays -- which works, but adds latency.
+    openFirewall = true;
+  };
 
   services.sunshine = {
     enable = true;
