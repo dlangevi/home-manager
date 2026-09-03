@@ -68,9 +68,13 @@ in
       set-option -g status-right '#[fg=red,bold] #[fg=cyan]»» #[fg=blue,bold]###S #[fg=magenta]%R %m-%d#(acpi | cut -d ',' -f 2)#[default]'
       set-option -g visual-activity on
 
-      # Titles
+      # Titles. wezterm shows the tab title, and this is the only channel that
+      # survives the whole stack: tmux overwrites whatever the pane sets, and
+      # OSC 2 rides an ssh or mosh connection like any other output. #h is the
+      # short hostname of the machine running *this server*, so a tab attached
+      # to a remote session names the far end with no wezterm-side plumbing.
       set-option -g set-titles on
-      set-option -g set-titles-string '#T #W'
+      set-option -g set-titles-string '#h'
 
       # Unbindings
       unbind j
