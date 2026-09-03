@@ -54,6 +54,14 @@
       fi
       unset -f _is_remote_session
 
+      # Title = hostname, matching tmux's set-titles-string '#h'. This covers
+      # bare shells outside a session; oh-my-zsh's own title handling would
+      # otherwise put the cwd and last command there, and it checks this flag
+      # at runtime so setting it here is enough.
+      DISABLE_AUTO_TITLE="true"
+      _host_title() { print -Pn "\e]2;%m\a" }
+      precmd_functions+=(_host_title)
+
       tmux-session() {
         local target name agent=0
         if [[ "$1" == "-a" || "$1" == "--agent" ]]; then

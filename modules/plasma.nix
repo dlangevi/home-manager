@@ -1,4 +1,4 @@
-# Plasma responsiveness tuning. Two unrelated problems live here:
+# Plasma tuning. Three unrelated things live here:
 #
 #   1. Baloo was content-indexing all of $HOME with no scope restriction, which on
 #      this machine meant recursively extracting file contents across ~/storage
@@ -9,6 +9,9 @@
 #      bulk trees fixes it; full-text search inside files is the price.
 #
 #   2. Stock animation duration (factor 1.0) reads as floaty.
+#
+#   3. Default terminal. Konsole is hardcoded as KIO's fallback, so wezterm has
+#      to be named explicitly.
 #
 # Only the keys named below are written -- see overrideConfig.
 { ... }:
@@ -37,6 +40,15 @@
       # Animation speed moved to kdeglobals [KDE] in Plasma 6; cf. the
       # kwin.upd:animation-speed marker already in that file's update_info.
       kdeglobals."KDE"."AnimationDurationFactor" = 0.25;
+
+      # Default terminal for anything that asks the desktop for one: Dolphin's
+      # Open Terminal, KRunner, any `Terminal=true` desktop entry. KIO reads
+      # this key and falls back to a hardcoded "konsole" if it is unset --
+      # both strings are visible in libKF6KIOGui.so.6.26. The launcher hands
+      # the command over as `-e <cmd>`, which wezterm accepts as an alias for
+      # its `start` subcommand, and inherits the job's cwd for the
+      # open-here case.
+      kdeglobals."General"."TerminalApplication" = "wezterm";
 
       # Baloo: filenames only, bulk trees excluded. Key names per
       # src/lib/baloosettings.kcfg in KDE/baloo.
