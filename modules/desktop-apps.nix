@@ -50,7 +50,6 @@ in
     kdePackages.kdenlive
     smplayer
     mpv
-    alacritty
     calibre
     filezilla
     anki-bin
