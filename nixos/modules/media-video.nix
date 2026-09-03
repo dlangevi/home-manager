@@ -33,7 +33,7 @@ let
   lanSubnet = "10.0.70.0/24";
   # Tailscale hands out addresses from the CGNAT range. Scoping to this rather
   # than trusting tailscale0 wholesale keeps the same posture as the LAN rule:
-  # only the two media ports are reachable, not every service on the box.
+  # only the media ports are reachable, not every service on the box.
   tailnet = "100.64.0.0/10";
   jellyfinPort = 8096;
 in
@@ -63,11 +63,34 @@ in
     openFirewall = true;
   };
 
+  # `http://suspense` should land on Jellyfin without anyone having to remember
+  # :8096. A reverse proxy rather than an iptables REDIRECT of 80 -> 8096:
+  # DNAT in PREROUTING skips locally-originated traffic, so it would work from
+  # phones and laptops but not from a browser on this box, and it leaves
+  # nowhere to terminate TLS or add a second service later.
+  services.nginx = {
+    enable = true;
+    recommendedProxySettings = true;
+    virtualHosts."suspense" = {
+      # Bare hostnames arrive with whatever Host header the client felt like
+      # sending (`suspense`, the tailnet FQDN, a raw IP), so this vhost has to
+      # answer for all of them.
+      default = true;
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:${toString jellyfinPort}";
+        # The web client's playback state and syncplay ride a websocket.
+        proxyWebsockets = true;
+      };
+    };
+  };
+
   networking.firewall.extraCommands =
     let allow = subnet: port:
       "iptables -A nixos-fw -p tcp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
     in ''
       ${allow lanSubnet jellyfinPort}
       ${allow tailnet jellyfinPort}
+      ${allow lanSubnet 80}
+      ${allow tailnet 80}
     '';
 }
