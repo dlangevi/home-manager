@@ -29,7 +29,7 @@ let
   lanSubnet = "10.0.70.0/24";
   # Tailscale hands out addresses from the CGNAT range. Scoping to this rather
   # than trusting tailscale0 wholesale keeps the same posture as the LAN rule:
-  # only the one port is reachable, not every service on the box.
+  # only the service ports are reachable, not every service on the box.
   tailnet = "100.64.0.0/10";
   navidromePort = 4533;
 in
@@ -75,11 +75,34 @@ in
     openFirewall = true;
   };
 
+  # `http://dance` should land on Navidrome without anyone having to remember
+  # :4533. A reverse proxy rather than an iptables REDIRECT of 80 -> 4533:
+  # DNAT in PREROUTING skips locally-originated traffic, so it would work from
+  # phones and laptops but not from a browser on this box, and it leaves
+  # nowhere to terminate TLS or add a second service later.
+  services.nginx = {
+    enable = true;
+    recommendedProxySettings = true;
+    virtualHosts."dance" = {
+      # Bare hostnames arrive with whatever Host header the client felt like
+      # sending (`dance`, the tailnet FQDN, a raw IP), so this vhost has to
+      # answer for all of them.
+      default = true;
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:${toString navidromePort}";
+        # Navidrome pushes scan progress and now-playing over a websocket.
+        proxyWebsockets = true;
+      };
+    };
+  };
+
   networking.firewall.extraCommands =
-    let allow = subnet:
-      "iptables -A nixos-fw -p tcp -s ${subnet} --dport ${toString navidromePort} -j nixos-fw-accept";
+    let allow = subnet: port:
+      "iptables -A nixos-fw -p tcp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
     in ''
-      ${allow lanSubnet}
-      ${allow tailnet}
+      ${allow lanSubnet navidromePort}
+      ${allow tailnet navidromePort}
+      ${allow lanSubnet 80}
+      ${allow tailnet 80}
     '';
 }
