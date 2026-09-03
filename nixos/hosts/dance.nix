@@ -33,7 +33,7 @@
   system.autoUpgrade = {
     enable = true;
     flake = "github:dlangevi/home-manager";
-    flags = [ "--impure" "-L" ];
+    flags = [ "-L" ];
     dates = "Sun 03:00";
     randomizedDelaySec = "45min";
     allowReboot = false;
