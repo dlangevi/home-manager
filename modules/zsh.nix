@@ -79,6 +79,9 @@
             target=$PWD
             name=$PWD
           fi
+        elif [[ $1 == /* ]]; then
+          target=$1
+          name=$1
         else
           target=$HOME/$1
           name=$1
