@@ -9,9 +9,10 @@
   media        = [ ./modules/media.nix ];
   # cdrip, on the machine with the optical drive.
   music        = [ music-mgmt.homeModules.default ];
-  # beets on the machine that holds the library, for reading the
-  # database cdrip publishes.
-  music-server = [ music-mgmt.homeModules.server ];
+  # beets on the machine that holds the library, for reading the database
+  # cdrip publishes. Local rather than from the music-mgmt flake: that is a
+  # `path:` input, which only resolves on the machine holding the repo.
+  music-server = [ ./modules/music-server.nix ];
   plasma       = [ ./modules/plasma.nix plasma-manager.homeModules.plasma-manager ];
   streaming    = [ ./modules/streaming.nix ];
 }
