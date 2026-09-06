@@ -84,7 +84,10 @@
     isNormalUser = true;
     shell = pkgs.zsh;
     description = "david";
-    extraGroups = [ "networkmanager" "wheel" "console" ];
+    # cdrom: the USB optical drive is root:cdrom 0660. The device also
+    # carries a uaccess ACL for the seated user, which makes interactive
+    # sessions work and non-seated ones fail confusingly.
+    extraGroups = [ "networkmanager" "wheel" "console" "cdrom" ];
     packages = with pkgs; [ kdePackages.kate ];
   };
 

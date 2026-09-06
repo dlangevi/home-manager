@@ -117,6 +117,20 @@ in
       # The library is large and mostly static. Full rescans only when tags
       # change, not on every startup.
       ScanSchedule = "@every 24h";
+
+      # NEIGHBOUR records who lent a disc in the JPC library; cdrip writes it
+      # into every track it rips. Declaring it here is what makes Navidrome
+      # keep the value instead of discarding it as an unknown comment.
+      #
+      # It lands as an *additional* tag: usable as a smart-playlist field and
+      # visible on the track, but not a top-level browse facet -- Navidrome
+      # reserves those for its built-in tags.
+      #
+      # Album is deliberately left false. Setting it would fold the tag into
+      # album PID generation, which would both re-key existing albums and
+      # split an album lent by two different neighbours into two.
+      Tags.neighbour.Aliases = [ "neighbour" ];
+      Tags.neighbour.MaxLength = 64;
     };
   };
 
