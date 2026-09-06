@@ -38,6 +38,23 @@
         "type": "github"
       }
     },
+    "music-mgmt": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788656419,
+        "narHash": "sha256-XvynZ9DmxOMMPdBJvTtrJzrcoARTpeilsgjDmbz4zew=",
+        "path": "/home/dlangevi/auto/music-mgmt",
+        "type": "path"
+      },
+      "original": {
+        "path": "/home/dlangevi/auto/music-mgmt",
+        "type": "path"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1787640266,
@@ -113,6 +130,7 @@
       "inputs": {
         "dldev": "dldev",
         "home-manager": "home-manager",
+        "music-mgmt": "music-mgmt",
         "nixpkgs": "nixpkgs",
         "nixpkgs-ollama": "nixpkgs-ollama",
         "nixpkgs-unstable": "nixpkgs-unstable",
