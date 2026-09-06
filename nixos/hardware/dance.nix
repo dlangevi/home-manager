@@ -29,6 +29,13 @@
       fsType = "ext4";
     };
 
+  # 2TB USB drive: movies/shows library (bind-mounted into /srv/media by
+  # media-audio.nix) plus OBS stream recordings.
+  fileSystems."/home/dance/storage/video" =
+    { device = "/dev/disk/by-uuid/8ad0ab9a-3fe2-427f-b463-fed9d2459104";
+      fsType = "ext4";
+    };
+
   swapDevices = [ ];
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking

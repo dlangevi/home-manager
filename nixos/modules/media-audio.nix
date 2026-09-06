@@ -27,9 +27,14 @@ let
   storeDir = "/home/dance/storage/music";
   musicDir = "/srv/media/music";
 
-  # Movies and shows already live at /srv/media -- no bind mount needed. This
-  # is the canonical location for them now, not a source synced from
-  # elsewhere, so unlike musicDir there's nothing to bind from.
+  # Movies and shows live on their own 2TB USB drive, mounted alongside the
+  # storage NVMe at /home/dance/storage/video (that drive also catches OBS
+  # stream recordings, hence living under storage/ rather than somewhere
+  # movie/show-specific). Same bind-mount trick as storeDir/musicDir gets
+  # them into Jellyfin's view.
+  videoStorage = "/home/dance/storage/video";
+  moviesStoreDir = "${videoStorage}/movies";
+  showsStoreDir = "${videoStorage}/shows";
   moviesDir = "/srv/media/movies";
   showsDir = "/srv/media/shows";
   jellyfinPort = 8096;
@@ -64,8 +69,8 @@ in
   systemd.tmpfiles.rules = [
     "d /srv/media 0755 root root -"
     "d ${storeDir} 0755 dance users -"
-    "d ${moviesDir} 0755 dance users -"
-    "d ${showsDir} 0755 dance users -"
+    "d ${moviesStoreDir} 0755 dance users -"
+    "d ${showsStoreDir} 0755 dance users -"
     "d ${jpcMusicDir} 0755 dance users -"
     "d ${jpcMoviesDir} 0755 dance users -"
     "d ${jpcShowsDir} 0755 dance users -"
@@ -82,6 +87,22 @@ in
     fsType = "none";
     options = [ "bind" "ro" ];
     depends = [ "/home/dance/storage" ];
+  };
+
+  # Same reasoning as the music bind above, `depends` on videoStorage rather
+  # than /home/dance/storage since these live on the separate USB drive.
+  fileSystems.${moviesDir} = {
+    device = moviesStoreDir;
+    fsType = "none";
+    options = [ "bind" "ro" ];
+    depends = [ videoStorage ];
+  };
+
+  fileSystems.${showsDir} = {
+    device = showsStoreDir;
+    fsType = "none";
+    options = [ "bind" "ro" ];
+    depends = [ videoStorage ];
   };
 
   services.navidrome = {
