@@ -14,8 +14,9 @@ let
   # The library lives on the storage NVMe and is exposed read-only at
   # /srv/media/music, which is what navidrome reads.
   #
-  # The indirection is necessary: /home/dance is 0700, so navidrome's
-  # DynamicUser cannot traverse into it. A bind mount sidesteps that because
+  # The indirection is necessary: /home/dance is 0700, and navidrome runs as
+  # its own user (uid 991, group navidrome), which is in none of dance's
+  # groups, so it cannot traverse into it. A bind mount sidesteps that because
   # permission checks apply to the components of the NEW path, not the
   # original's parents -- the same trick media-video.nix uses on suspense.
   # chmod o+x on the home directory would be the alternative and would weaken
@@ -64,8 +65,10 @@ let
   navidromePort = 4533;
 in
 {
-  # 0755 because the navidrome unit uses DynamicUser, so there is no stable uid
-  # to grant access to; dance owns the directory so rsync can write into it.
+  # 0755 because navidrome's user shares no group with dance, so world-read is
+  # the only thing that reaches it; dance owns the directory so rsync can
+  # write into it. Files need the same treatment -- see the --chmod in cdrip's
+  # transfer, since beets writes converted tracks as 0600.
   systemd.tmpfiles.rules = [
     "d /srv/media 0755 root root -"
     "d ${storeDir} 0755 dance users -"
