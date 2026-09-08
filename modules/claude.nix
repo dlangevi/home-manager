@@ -33,6 +33,10 @@ in
   home.file.".claude/CLAUDE.md".source     = link "${syncRoot}/CLAUDE.md";
   home.file.".claude/settings.json".source = link "${syncRoot}/settings.json";
   home.file.".claude/commands".source      = link "${syncRoot}/commands";
+  # Personal skills, shared across every workspace rather than living in one
+  # project's .claude/. The asana skill in particular is needed anywhere the
+  # task system comes up, not just in ~/auto/research.
+  home.file.".claude/skills".source        = link "${syncRoot}/skills";
 
   # Backfill on activation for projects that already have a Sync memory dir
   # but no local symlink yet (e.g. after cloning on a fresh machine).
