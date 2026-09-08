@@ -115,13 +115,16 @@ in
   # the web UI -- so the frontend is patched. nixpkgs builds the UI from
   # source, which is what makes that possible.
   #
-  # The patch is deliberately small: one filter mapping server-side so the
-  # tag list can be narrowed to a single tag name, and a React resource that
-  # lists the values of the `neighbour` tag and links each one to the album
-  # list filtered by it. Everything else already existed.
+  # The patch is frontend-only, and small, because everything under it
+  # already exists: album_repository registers a filter for every
+  # album-level tag on its own, /api/tag already serves tag values with
+  # album counts, and AlbumFilter already narrows that by `tag_name` for its
+  # own recordlabel and grouping inputs. All that is added is a React
+  # resource listing the `neighbour` tag's values, each linking to the album
+  # list filtered by it.
   #
   # The cost is that dance rebuilds navidrome from source, and the patch may
-  # need rebasing when upstream touches App.jsx, en.json or sql_tags.go.
+  # need rebasing when upstream touches App.jsx or en.json.
   nixpkgs.overlays = [
     (final: prev: {
       navidrome = prev.navidrome.overrideAttrs (old: {
