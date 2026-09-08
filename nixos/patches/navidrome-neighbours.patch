@@ -1,0 +1,131 @@
+diff --color -ruN '--exclude=.git' a/persistence/sql_tags.go b/persistence/sql_tags.go
+--- a/persistence/sql_tags.go	2026-09-08 10:53:45.885114396 -0700
++++ b/persistence/sql_tags.go	2026-09-08 10:53:46.120206928 -0700
+@@ -84,6 +84,10 @@
+ 	r.registerModel(&model.Tag{}, map[string]filterFunc{
+ 		"name":       containsFilter("tag_value"),
+ 		"library_id": tagLibraryIdFilter,
++		// Lets a client ask for the values of one tag only, which is what a
++		// browse-by-tag view needs; without it the only option is to fetch
++		// every tag in the library and filter client-side.
++		"tag_name": eqFilter,
+ 	})
+ 	r.setSortMappings(map[string]string{
+ 		"name": "tag_value",
+diff --color -ruN '--exclude=.git' a/ui/src/App.jsx b/ui/src/App.jsx
+--- a/ui/src/App.jsx	2026-09-08 10:53:45.928781088 -0700
++++ b/ui/src/App.jsx	2026-09-08 10:53:46.176298269 -0700
+@@ -19,6 +19,7 @@
+ import artist from './artist'
+ import playlist from './playlist'
+ import radio from './radio'
++import neighbour from './neighbour'
+ import share from './share'
+ import library from './library'
+ import plugin from './plugin'
+@@ -127,6 +128,7 @@
+         <Resource name="album" {...album} options={{ subMenu: 'albumList' }} />,
+         <Resource name="artist" {...artist} />,
+         <Resource name="song" {...song} />,
++        <Resource name="neighbour" {...neighbour} />,
+         <Resource
+           name="radio"
+           {...(permissions === 'admin' ? radio.admin : radio.all)}
+diff --color -ruN '--exclude=.git' a/ui/src/i18n/en.json b/ui/src/i18n/en.json
+--- a/ui/src/i18n/en.json	2026-09-08 10:53:45.935179881 -0700
++++ b/ui/src/i18n/en.json	2026-09-08 10:53:46.176592683 -0700
+@@ -230,6 +230,13 @@
+         "noPlaylists": "No playlists available"
+       }
+     },
++    "neighbour": {
++      "name": "Neighbour |||| Neighbours",
++      "fields": {
++        "name": "Neighbour",
++        "albumCount": "Albums"
++      }
++    },
+     "radio": {
+       "name": "Radio |||| Radios",
+       "fields": {
+diff --color -ruN '--exclude=.git' a/ui/src/neighbour/index.jsx b/ui/src/neighbour/index.jsx
+--- a/ui/src/neighbour/index.jsx	1969-12-31 16:00:00.000000000 -0800
++++ b/ui/src/neighbour/index.jsx	2026-09-08 10:53:46.136892659 -0700
+@@ -0,0 +1,16 @@
++import React from 'react'
++import PeopleIcon from '@material-ui/icons/People'
++import PeopleOutlinedIcon from '@material-ui/icons/PeopleOutlined'
++import NeighbourList from './NeighbourList'
++import DynamicMenuIcon from '../layout/DynamicMenuIcon'
++
++export default {
++  list: NeighbourList,
++  icon: (
++    <DynamicMenuIcon
++      path={'neighbour'}
++      icon={PeopleOutlinedIcon}
++      activeIcon={PeopleIcon}
++    />
++  ),
++}
+diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src/neighbour/NeighbourList.jsx
+--- a/ui/src/neighbour/NeighbourList.jsx	1969-12-31 16:00:00.000000000 -0800
++++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 10:53:46.132892602 -0700
+@@ -0,0 +1,57 @@
++import React from 'react'
++import { Datagrid, List, NumberField } from 'react-admin'
++import { Link } from 'react-router-dom'
++import { makeStyles } from '@material-ui/core/styles'
++
++const useStyles = makeStyles({
++  link: { textDecoration: 'none', color: 'inherit' },
++})
++
++// The album list filters on the tag id, the same way AlbumDetails links to a
++// genre. `neighbour` is registered as an album filter automatically because
++// the tag is configured with `album: true`.
++const albumsOf = (record) =>
++  `/album?filter=${encodeURIComponent(
++    JSON.stringify({ neighbour: [record.id] }),
++  )}&order=ASC&sort=name&perPage=48`
++
++const NeighbourNameField = ({ record }) => {
++  const classes = useStyles()
++  if (!record) return null
++  return (
++    <Link to={albumsOf(record)} className={classes.link}>
++      {record.tagValue}
++    </Link>
++  )
++}
++
++// Reads the `tag` resource rather than a `neighbour` one: there is no
++// /api/neighbour, and none is needed -- a neighbour is just a value of the
++// `neighbour` tag.
++const NeighbourList = (props) => (
++  <List
++    {...props}
++    resource="tag"
++    basePath="/neighbour"
++    filter={{ tag_name: 'neighbour' }}
++    filters={null}
++    exporter={false}
++    bulkActionButtons={false}
++    sort={{ field: 'name', order: 'ASC' }}
++    perPage={200}
++    pagination={null}
++  >
++    <Datagrid>
++      <NeighbourNameField
++        source="tagValue"
++        label="resources.neighbour.fields.name"
++      />
++      <NumberField
++        source="albumCount"
++        label="resources.neighbour.fields.albumCount"
++      />
++    </Datagrid>
++  </List>
++)
++
++export default NeighbourList
