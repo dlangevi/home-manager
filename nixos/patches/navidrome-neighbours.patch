@@ -1,6 +1,6 @@
 diff --color -ruN '--exclude=.git' a/ui/src/App.jsx b/ui/src/App.jsx
 --- a/ui/src/App.jsx	2026-09-08 10:53:45.928781088 -0700
-+++ b/ui/src/App.jsx	2026-09-08 11:34:09.108083312 -0700
++++ b/ui/src/App.jsx	2026-09-08 11:50:05.119793693 -0700
 @@ -19,6 +19,7 @@
  import artist from './artist'
  import playlist from './playlist'
@@ -19,7 +19,7 @@ diff --color -ruN '--exclude=.git' a/ui/src/App.jsx b/ui/src/App.jsx
            {...(permissions === 'admin' ? radio.admin : radio.all)}
 diff --color -ruN '--exclude=.git' a/ui/src/i18n/en.json b/ui/src/i18n/en.json
 --- a/ui/src/i18n/en.json	2026-09-08 10:53:45.935179881 -0700
-+++ b/ui/src/i18n/en.json	2026-09-08 11:34:09.108339445 -0700
++++ b/ui/src/i18n/en.json	2026-09-08 11:50:05.120016595 -0700
 @@ -230,6 +230,13 @@
          "noPlaylists": "No playlists available"
        }
@@ -36,7 +36,7 @@ diff --color -ruN '--exclude=.git' a/ui/src/i18n/en.json b/ui/src/i18n/en.json
        "fields": {
 diff --color -ruN '--exclude=.git' a/ui/src/neighbour/index.jsx b/ui/src/neighbour/index.jsx
 --- a/ui/src/neighbour/index.jsx	1969-12-31 16:00:00.000000000 -0800
-+++ b/ui/src/neighbour/index.jsx	2026-09-08 11:34:09.069690136 -0700
++++ b/ui/src/neighbour/index.jsx	2026-09-08 11:50:05.084632699 -0700
 @@ -0,0 +1,16 @@
 +import React from 'react'
 +import PeopleIcon from '@material-ui/icons/People'
@@ -56,10 +56,10 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/index.jsx b/ui/src/neighbo
 +}
 diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src/neighbour/NeighbourList.jsx
 --- a/ui/src/neighbour/NeighbourList.jsx	1969-12-31 16:00:00.000000000 -0800
-+++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 11:34:09.062690048 -0700
-@@ -0,0 +1,71 @@
++++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 11:50:05.078632664 -0700
+@@ -0,0 +1,98 @@
 +import React from 'react'
-+import { Datagrid, List, NumberField } from 'react-admin'
++import { Datagrid, List, useGetList } from 'react-admin'
 +import { Link } from 'react-router-dom'
 +import { withWidth } from '@material-ui/core'
 +import { makeStyles } from '@material-ui/core/styles'
@@ -74,11 +74,10 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src
 +// tag name to its values -- so despite its name, tagIDFilter compares against
 +// "David L", and a tag id would never match.
 +//
-+// The filter is embedded as raw JSON, exactly as AlbumDetails does for genre
-+// chips. Running it through encodeURIComponent first is what broke this:
-+// react-router encodes the target as well, so the colon arrived as %253A and
-+// the filter was not valid JSON. JSON.stringify is used only for the value,
-+// so a name containing a quote cannot break out of the string.
++// The filter is embedded raw, as AlbumDetails does for genre chips. Running
++// it through encodeURIComponent first meant react-router encoded it a second
++// time and the separator arrived as %25-escaped, leaving a filter the album
++// list could not read.
 +const useAlbumsOfNeighbour = (width) => {
 +  const [perPage] = useAlbumsPerPage(width)
 +
@@ -97,6 +96,34 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src
 +    </Link>
 +  )
 +})
++
++// Navidrome maintains album_count for genre tags only: UpdateCounts in
++// tag_repository.go hardcodes json_tree(album.tags, '$.genre'), so every
++// other tag -- neighbour, and equally recordlabel, grouping and mood --
++// stays at zero. model.Tag then declares AlbumCount as
++// `json:"albumCount,omitempty"`, so that zero is dropped from the response
++// altogether and there is nothing for a NumberField to show.
++//
++// So the albums are counted here instead, by asking for one page of exactly
++// the albums this row links to. It costs a small request per row, which is
++// nothing for a list of neighbours, and the number cannot disagree with the
++// page it leads to.
++const AlbumCountField = ({ record }) => {
++  const { total, loading, error } = useGetList(
++    'album',
++    { page: 1, perPage: 1 },
++    { field: 'name', order: 'ASC' },
++    { neighbour: [record?.tagValue] },
++  )
++  if (!record) return null
++  if (error) return <span>-</span>
++  if (loading) return <span>…</span>
++  return <span>{total || 0}</span>
++}
++
++// Right-aligned like the NumberField it replaces; Datagrid reads this off
++// the child's props.
++AlbumCountField.defaultProps = { textAlign: 'right' }
 +
 +// Reads the `tag` resource rather than a `neighbour` one: there is no
 +// /api/neighbour, and none is needed -- a neighbour is just a value of the
@@ -120,7 +147,7 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src
 +        source="tagValue"
 +        label="resources.neighbour.fields.name"
 +      />
-+      <NumberField
++      <AlbumCountField
 +        source="albumCount"
 +        label="resources.neighbour.fields.albumCount"
 +      />
