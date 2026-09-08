@@ -1,20 +1,6 @@
-diff --color -ruN '--exclude=.git' a/persistence/sql_tags.go b/persistence/sql_tags.go
---- a/persistence/sql_tags.go	2026-09-08 10:53:45.885114396 -0700
-+++ b/persistence/sql_tags.go	2026-09-08 10:53:46.120206928 -0700
-@@ -84,6 +84,10 @@
- 	r.registerModel(&model.Tag{}, map[string]filterFunc{
- 		"name":       containsFilter("tag_value"),
- 		"library_id": tagLibraryIdFilter,
-+		// Lets a client ask for the values of one tag only, which is what a
-+		// browse-by-tag view needs; without it the only option is to fetch
-+		// every tag in the library and filter client-side.
-+		"tag_name": eqFilter,
- 	})
- 	r.setSortMappings(map[string]string{
- 		"name": "tag_value",
 diff --color -ruN '--exclude=.git' a/ui/src/App.jsx b/ui/src/App.jsx
 --- a/ui/src/App.jsx	2026-09-08 10:53:45.928781088 -0700
-+++ b/ui/src/App.jsx	2026-09-08 10:53:46.176298269 -0700
++++ b/ui/src/App.jsx	2026-09-08 11:34:09.108083312 -0700
 @@ -19,6 +19,7 @@
  import artist from './artist'
  import playlist from './playlist'
@@ -33,7 +19,7 @@ diff --color -ruN '--exclude=.git' a/ui/src/App.jsx b/ui/src/App.jsx
            {...(permissions === 'admin' ? radio.admin : radio.all)}
 diff --color -ruN '--exclude=.git' a/ui/src/i18n/en.json b/ui/src/i18n/en.json
 --- a/ui/src/i18n/en.json	2026-09-08 10:53:45.935179881 -0700
-+++ b/ui/src/i18n/en.json	2026-09-08 10:53:46.176592683 -0700
++++ b/ui/src/i18n/en.json	2026-09-08 11:34:09.108339445 -0700
 @@ -230,6 +230,13 @@
          "noPlaylists": "No playlists available"
        }
@@ -50,7 +36,7 @@ diff --color -ruN '--exclude=.git' a/ui/src/i18n/en.json b/ui/src/i18n/en.json
        "fields": {
 diff --color -ruN '--exclude=.git' a/ui/src/neighbour/index.jsx b/ui/src/neighbour/index.jsx
 --- a/ui/src/neighbour/index.jsx	1969-12-31 16:00:00.000000000 -0800
-+++ b/ui/src/neighbour/index.jsx	2026-09-08 10:53:46.136892659 -0700
++++ b/ui/src/neighbour/index.jsx	2026-09-08 11:34:09.069690136 -0700
 @@ -0,0 +1,16 @@
 +import React from 'react'
 +import PeopleIcon from '@material-ui/icons/People'
@@ -70,38 +56,52 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/index.jsx b/ui/src/neighbo
 +}
 diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src/neighbour/NeighbourList.jsx
 --- a/ui/src/neighbour/NeighbourList.jsx	1969-12-31 16:00:00.000000000 -0800
-+++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 10:53:46.132892602 -0700
-@@ -0,0 +1,57 @@
++++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 11:34:09.062690048 -0700
+@@ -0,0 +1,71 @@
 +import React from 'react'
 +import { Datagrid, List, NumberField } from 'react-admin'
 +import { Link } from 'react-router-dom'
++import { withWidth } from '@material-ui/core'
 +import { makeStyles } from '@material-ui/core/styles'
++import { useAlbumsPerPage } from '../common'
 +
 +const useStyles = makeStyles({
 +  link: { textDecoration: 'none', color: 'inherit' },
 +})
 +
-+// The album list filters on the tag id, the same way AlbumDetails links to a
-+// genre. `neighbour` is registered as an album filter automatically because
-+// the tag is configured with `album: true`.
-+const albumsOf = (record) =>
-+  `/album?filter=${encodeURIComponent(
-+    JSON.stringify({ neighbour: [record.id] }),
-+  )}&order=ASC&sort=name&perPage=48`
++// Filters on the tag VALUE, not the tag id. Album.SetTags stores
++// GroupByFrequency's output in the album's `tags` column, and that maps each
++// tag name to its values -- so despite its name, tagIDFilter compares against
++// "David L", and a tag id would never match.
++//
++// The filter is embedded as raw JSON, exactly as AlbumDetails does for genre
++// chips. Running it through encodeURIComponent first is what broke this:
++// react-router encodes the target as well, so the colon arrived as %253A and
++// the filter was not valid JSON. JSON.stringify is used only for the value,
++// so a name containing a quote cannot break out of the string.
++const useAlbumsOfNeighbour = (width) => {
++  const [perPage] = useAlbumsPerPage(width)
 +
-+const NeighbourNameField = ({ record }) => {
++  return (record) =>
++    `/album?filter={"neighbour":${JSON.stringify([record.tagValue])}}` +
++    `&order=ASC&sort=name&perPage=${perPage}`
++}
++
++const NeighbourNameField = withWidth()(({ width, record }) => {
 +  const classes = useStyles()
++  const albumsOf = useAlbumsOfNeighbour(width)
 +  if (!record) return null
 +  return (
 +    <Link to={albumsOf(record)} className={classes.link}>
 +      {record.tagValue}
 +    </Link>
 +  )
-+}
++})
 +
 +// Reads the `tag` resource rather than a `neighbour` one: there is no
 +// /api/neighbour, and none is needed -- a neighbour is just a value of the
-+// `neighbour` tag.
++// `neighbour` tag. Narrowing by tag_name is how AlbumFilter reads its own
++// recordlabel and grouping values.
 +const NeighbourList = (props) => (
 +  <List
 +    {...props}
