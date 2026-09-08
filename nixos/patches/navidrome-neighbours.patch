@@ -1,6 +1,6 @@
 diff --color -ruN '--exclude=.git' a/ui/src/App.jsx b/ui/src/App.jsx
 --- a/ui/src/App.jsx	2026-09-08 10:53:45.928781088 -0700
-+++ b/ui/src/App.jsx	2026-09-08 11:50:05.119793693 -0700
++++ b/ui/src/App.jsx	2026-09-08 12:53:15.532994154 -0700
 @@ -19,6 +19,7 @@
  import artist from './artist'
  import playlist from './playlist'
@@ -19,7 +19,7 @@ diff --color -ruN '--exclude=.git' a/ui/src/App.jsx b/ui/src/App.jsx
            {...(permissions === 'admin' ? radio.admin : radio.all)}
 diff --color -ruN '--exclude=.git' a/ui/src/i18n/en.json b/ui/src/i18n/en.json
 --- a/ui/src/i18n/en.json	2026-09-08 10:53:45.935179881 -0700
-+++ b/ui/src/i18n/en.json	2026-09-08 11:50:05.120016595 -0700
++++ b/ui/src/i18n/en.json	2026-09-08 12:53:15.533215398 -0700
 @@ -230,6 +230,13 @@
          "noPlaylists": "No playlists available"
        }
@@ -36,7 +36,7 @@ diff --color -ruN '--exclude=.git' a/ui/src/i18n/en.json b/ui/src/i18n/en.json
        "fields": {
 diff --color -ruN '--exclude=.git' a/ui/src/neighbour/index.jsx b/ui/src/neighbour/index.jsx
 --- a/ui/src/neighbour/index.jsx	1969-12-31 16:00:00.000000000 -0800
-+++ b/ui/src/neighbour/index.jsx	2026-09-08 11:50:05.084632699 -0700
++++ b/ui/src/neighbour/index.jsx	2026-09-08 12:53:15.490987308 -0700
 @@ -0,0 +1,16 @@
 +import React from 'react'
 +import PeopleIcon from '@material-ui/icons/People'
@@ -56,9 +56,9 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/index.jsx b/ui/src/neighbo
 +}
 diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src/neighbour/NeighbourList.jsx
 --- a/ui/src/neighbour/NeighbourList.jsx	1969-12-31 16:00:00.000000000 -0800
-+++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 11:50:05.078632664 -0700
-@@ -0,0 +1,98 @@
-+import React from 'react'
++++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 12:53:15.483987202 -0700
+@@ -0,0 +1,124 @@
++import React, { useMemo } from 'react'
 +import { Datagrid, List, useGetList } from 'react-admin'
 +import { Link } from 'react-router-dom'
 +import { withWidth } from '@material-ui/core'
@@ -100,25 +100,44 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src
 +// Navidrome maintains album_count for genre tags only: UpdateCounts in
 +// tag_repository.go hardcodes json_tree(album.tags, '$.genre'), so every
 +// other tag -- neighbour, and equally recordlabel, grouping and mood --
-+// stays at zero. model.Tag then declares AlbumCount as
-+// `json:"albumCount,omitempty"`, so that zero is dropped from the response
-+// altogether and there is nothing for a NumberField to show.
++// stays at zero, and model.Tag declares AlbumCount `json:"albumCount,omitempty"`
++// so that zero never even reaches the client.
 +//
-+// So the albums are counted here instead, by asking for one page of exactly
-+// the albums this row links to. It costs a small request per row, which is
-+// nothing for a list of neighbours, and the number cannot disagree with the
-+// page it leads to.
-+const AlbumCountField = ({ record }) => {
-+  const { total, loading, error } = useGetList(
++// The counts are therefore tallied here, from one pass over the albums.
++// Albums carry their tags in the API (Album.Tags is `json:"tags"`), which is
++// how AlbumTableView reads a mood and AlbumInfo a record label, so the
++// neighbour is right there on each record. perPage 0 is this codebase's
++// idiom for "all of them", as AlbumFilter's reference inputs use.
++//
++// One request for the whole page rather than one per row: asking for a
++// single album per neighbour and reading the reported total did not work.
++const useNeighbourCounts = () => {
++  const { data, loaded, error } = useGetList(
 +    'album',
-+    { page: 1, perPage: 1 },
++    { page: 1, perPage: 0 },
 +    { field: 'name', order: 'ASC' },
-+    { neighbour: [record?.tagValue] },
++    {},
 +  )
++
++  const counts = useMemo(() => {
++    const tally = {}
++    Object.values(data || {}).forEach((album) => {
++      const names = album?.tags?.neighbour || []
++      names.forEach((name) => {
++        tally[name] = (tally[name] || 0) + 1
++      })
++    })
++    return tally
++  }, [data])
++
++  return { counts, loaded, error }
++}
++
++const AlbumCountField = ({ record, counts, loaded, error }) => {
 +  if (!record) return null
 +  if (error) return <span>-</span>
-+  if (loading) return <span>…</span>
-+  return <span>{total || 0}</span>
++  if (!loaded) return <span>…</span>
++  return <span>{counts[record.tagValue] || 0}</span>
 +}
 +
 +// Right-aligned like the NumberField it replaces; Datagrid reads this off
@@ -129,30 +148,37 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src
 +// /api/neighbour, and none is needed -- a neighbour is just a value of the
 +// `neighbour` tag. Narrowing by tag_name is how AlbumFilter reads its own
 +// recordlabel and grouping values.
-+const NeighbourList = (props) => (
-+  <List
-+    {...props}
-+    resource="tag"
-+    basePath="/neighbour"
-+    filter={{ tag_name: 'neighbour' }}
-+    filters={null}
-+    exporter={false}
-+    bulkActionButtons={false}
-+    sort={{ field: 'name', order: 'ASC' }}
-+    perPage={200}
-+    pagination={null}
-+  >
-+    <Datagrid>
-+      <NeighbourNameField
-+        source="tagValue"
-+        label="resources.neighbour.fields.name"
-+      />
-+      <AlbumCountField
-+        source="albumCount"
-+        label="resources.neighbour.fields.albumCount"
-+      />
-+    </Datagrid>
-+  </List>
-+)
++const NeighbourList = (props) => {
++  const { counts, loaded, error } = useNeighbourCounts()
++
++  return (
++    <List
++      {...props}
++      resource="tag"
++      basePath="/neighbour"
++      filter={{ tag_name: 'neighbour' }}
++      filters={null}
++      exporter={false}
++      bulkActionButtons={false}
++      sort={{ field: 'name', order: 'ASC' }}
++      perPage={200}
++      pagination={null}
++    >
++      <Datagrid>
++        <NeighbourNameField
++          source="tagValue"
++          label="resources.neighbour.fields.name"
++        />
++        <AlbumCountField
++          source="albumCount"
++          label="resources.neighbour.fields.albumCount"
++          counts={counts}
++          loaded={loaded}
++          error={error}
++        />
++      </Datagrid>
++    </List>
++  )
++}
 +
 +export default NeighbourList
