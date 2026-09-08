@@ -83,7 +83,7 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src
 +  const [perPage] = useAlbumsPerPage(width)
 +
 +  return (record) =>
-+    `/album?filter={"neighbour":${JSON.stringify([record.tagValue])}}` +
++    `/album?filter={"neighbour"=${JSON.stringify([record.tagValue])}}` +
 +    `&order=ASC&sort=name&perPage=${perPage}`
 +}
 +
