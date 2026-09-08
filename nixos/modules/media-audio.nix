@@ -108,6 +108,28 @@ in
     depends = [ videoStorage ];
   };
 
+  # A "Neighbours" entry in Navidrome's sidebar: pick a neighbour, get their
+  # albums. Navidrome has no extension point for this -- its plugin
+  # capabilities (lifecycle, lyrics, metadata_agent, scheduler_callback,
+  # scrobbler, sonic_similarity, taskworker, websocket_callback) do not touch
+  # the web UI -- so the frontend is patched. nixpkgs builds the UI from
+  # source, which is what makes that possible.
+  #
+  # The patch is deliberately small: one filter mapping server-side so the
+  # tag list can be narrowed to a single tag name, and a React resource that
+  # lists the values of the `neighbour` tag and links each one to the album
+  # list filtered by it. Everything else already existed.
+  #
+  # The cost is that dance rebuilds navidrome from source, and the patch may
+  # need rebasing when upstream touches App.jsx, en.json or sql_tags.go.
+  nixpkgs.overlays = [
+    (final: prev: {
+      navidrome = prev.navidrome.overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [ ../patches/navidrome-neighbours.patch ];
+      });
+    })
+  ];
+
   services.navidrome = {
     enable = true;
     # Deliberately false: openFirewall opens on every interface. The scoped
@@ -125,15 +147,22 @@ in
       # into every track it rips. Declaring it here is what makes Navidrome
       # keep the value instead of discarding it as an unknown comment.
       #
-      # It lands as an *additional* tag: usable as a smart-playlist field and
-      # visible on the track, but not a top-level browse facet -- Navidrome
-      # reserves those for its built-in tags.
+      # Album = true keeps the tag on the album row. Without it,
+      # Album.SetTags deletes any tag not marked album-level, so albums carry
+      # no neighbour at all and cannot be filtered by one.
       #
-      # Album is deliberately left false. Setting it would fold the tag into
-      # album PID generation, which would both re-key existing albums and
-      # split an album lent by two different neighbours into two.
+      # An earlier comment here claimed this would fold the tag into album
+      # PID generation and re-key existing albums. That was wrong, taken from
+      # the docs' wording rather than the code: computePID walks the explicit
+      # PID.Album spec
+      # ("musicbrainz_albumid|albumartistid,album,albumversion,releasedate")
+      # and never iterates album-level tags, so a tag not named there has no
+      # bearing on album identity.
+      #
+      # Changing tag configuration needs a full rescan to take effect.
       Tags.neighbour.Aliases = [ "neighbour" ];
       Tags.neighbour.MaxLength = 64;
+      Tags.neighbour.Album = true;
     };
   };
 
