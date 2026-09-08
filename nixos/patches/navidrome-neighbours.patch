@@ -1,6 +1,6 @@
 diff --color -ruN '--exclude=.git' a/ui/src/App.jsx b/ui/src/App.jsx
 --- a/ui/src/App.jsx	2026-09-08 10:53:45.928781088 -0700
-+++ b/ui/src/App.jsx	2026-09-08 12:53:15.532994154 -0700
++++ b/ui/src/App.jsx	2026-09-08 16:05:42.883622812 -0700
 @@ -19,6 +19,7 @@
  import artist from './artist'
  import playlist from './playlist'
@@ -19,7 +19,7 @@ diff --color -ruN '--exclude=.git' a/ui/src/App.jsx b/ui/src/App.jsx
            {...(permissions === 'admin' ? radio.admin : radio.all)}
 diff --color -ruN '--exclude=.git' a/ui/src/i18n/en.json b/ui/src/i18n/en.json
 --- a/ui/src/i18n/en.json	2026-09-08 10:53:45.935179881 -0700
-+++ b/ui/src/i18n/en.json	2026-09-08 12:53:15.533215398 -0700
++++ b/ui/src/i18n/en.json	2026-09-08 16:05:42.883844979 -0700
 @@ -230,6 +230,13 @@
          "noPlaylists": "No playlists available"
        }
@@ -36,7 +36,7 @@ diff --color -ruN '--exclude=.git' a/ui/src/i18n/en.json b/ui/src/i18n/en.json
        "fields": {
 diff --color -ruN '--exclude=.git' a/ui/src/neighbour/index.jsx b/ui/src/neighbour/index.jsx
 --- a/ui/src/neighbour/index.jsx	1969-12-31 16:00:00.000000000 -0800
-+++ b/ui/src/neighbour/index.jsx	2026-09-08 12:53:15.490987308 -0700
++++ b/ui/src/neighbour/index.jsx	2026-09-08 16:05:42.847612166 -0700
 @@ -0,0 +1,16 @@
 +import React from 'react'
 +import PeopleIcon from '@material-ui/icons/People'
@@ -56,10 +56,10 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/index.jsx b/ui/src/neighbo
 +}
 diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src/neighbour/NeighbourList.jsx
 --- a/ui/src/neighbour/NeighbourList.jsx	1969-12-31 16:00:00.000000000 -0800
-+++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 12:53:15.483987202 -0700
-@@ -0,0 +1,124 @@
-+import React, { useMemo } from 'react'
-+import { Datagrid, List, useGetList } from 'react-admin'
++++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 16:05:42.843612232 -0700
+@@ -0,0 +1,144 @@
++import React, { useEffect, useState } from 'react'
++import { Datagrid, List, useDataProvider } from 'react-admin'
 +import { Link } from 'react-router-dom'
 +import { withWidth } from '@material-ui/core'
 +import { makeStyles } from '@material-ui/core/styles'
@@ -69,10 +69,8 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src
 +  link: { textDecoration: 'none', color: 'inherit' },
 +})
 +
-+// Filters on the tag VALUE, not the tag id. Album.SetTags stores
-+// GroupByFrequency's output in the album's `tags` column, and that maps each
-+// tag name to its values -- so despite its name, tagIDFilter compares against
-+// "David L", and a tag id would never match.
++// Filters on the tag VALUE, not the tag id. json_tree compares every leaf, so
++// either would match, but the value is what AlbumDetails-style links carry.
 +//
 +// The filter is embedded raw, as AlbumDetails does for genre chips. Running
 +// it through encodeURIComponent first meant react-router encoded it a second
@@ -101,36 +99,58 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src
 +// tag_repository.go hardcodes json_tree(album.tags, '$.genre'), so every
 +// other tag -- neighbour, and equally recordlabel, grouping and mood --
 +// stays at zero, and model.Tag declares AlbumCount `json:"albumCount,omitempty"`
-+// so that zero never even reaches the client.
++// so that zero never even reaches the client. The counts are tallied here
++// instead, from one pass over the albums, which carry their tags in the API
++// (Album.Tags is `json:"tags"`).
 +//
-+// The counts are therefore tallied here, from one pass over the albums.
-+// Albums carry their tags in the API (Album.Tags is `json:"tags"`), which is
-+// how AlbumTableView reads a mood and AlbumInfo a record label, so the
-+// neighbour is right there on each record. perPage 0 is this codebase's
-+// idiom for "all of them", as AlbumFilter's reference inputs use.
++// Deliberately NOT useGetList. That hook returns nothing from the response
++// itself: it selects ids back out of redux at
++// resources[album].list.cachedRequests[requestSignature], where
++// requestSignature is JSON.stringify of the pagination/sort/filter as passed
++// in, while the reducer stores the entry under JSON.stringify of the request
++// payload as it stands when the response lands. wrapperDataProvider mutates
++// that same filter object in between -- params.filter.missing and
++// params.filter.library_id are assigned in place -- so the two keys never
++// match, ids comes back null, and data is {} however well the request went.
 +//
-+// One request for the whole page rather than one per row: asking for a
-+// single album per neighbour and reading the reported total did not work.
++// Reading the promise sidesteps the store, the signature and the mutation.
 +const useNeighbourCounts = () => {
-+  const { data, loaded, error } = useGetList(
-+    'album',
-+    { page: 1, perPage: 0 },
-+    { field: 'name', order: 'ASC' },
-+    {},
-+  )
++  const dataProvider = useDataProvider()
++  const [state, setState] = useState({ counts: {}, loaded: false, error: null })
 +
-+  const counts = useMemo(() => {
-+    const tally = {}
-+    Object.values(data || {}).forEach((album) => {
-+      const names = album?.tags?.neighbour || []
-+      names.forEach((name) => {
-+        tally[name] = (tally[name] || 0) + 1
++  useEffect(() => {
++    let cancelled = false
++
++    dataProvider
++      // perPage 0 is this codebase's idiom for "all of them", as
++      // AlbumFilter's reference inputs use. A fresh filter object each call,
++      // since the provider writes into it.
++      .getList('album', {
++        pagination: { page: 1, perPage: 0 },
++        sort: { field: 'name', order: 'ASC' },
++        filter: {},
 +      })
-+    })
-+    return tally
-+  }, [data])
++      .then(({ data }) => {
++        if (cancelled) return
++        const tally = {}
++        ;(data || []).forEach((album) => {
++          const names = album?.tags?.neighbour || []
++          names.forEach((name) => {
++            tally[name] = (tally[name] || 0) + 1
++          })
++        })
++        setState({ counts: tally, loaded: true, error: null })
++      })
++      .catch((error) => {
++        if (!cancelled) setState({ counts: {}, loaded: false, error })
++      })
 +
-+  return { counts, loaded, error }
++    return () => {
++      cancelled = true
++    }
++  }, [dataProvider])
++
++  return state
 +}
 +
 +const AlbumCountField = ({ record, counts, loaded, error }) => {
