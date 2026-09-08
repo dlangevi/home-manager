@@ -56,8 +56,8 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/index.jsx b/ui/src/neighbo
 +}
 diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src/neighbour/NeighbourList.jsx
 --- a/ui/src/neighbour/NeighbourList.jsx	1969-12-31 16:00:00.000000000 -0800
-+++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 16:05:42.843612232 -0700
-@@ -0,0 +1,144 @@
++++ b/ui/src/neighbour/NeighbourList.jsx	2026-09-08 16:22:46.842676071 -0700
+@@ -0,0 +1,148 @@
 +import React, { useEffect, useState } from 'react'
 +import { Datagrid, List, useDataProvider } from 'react-admin'
 +import { Link } from 'react-router-dom'
@@ -69,18 +69,20 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src
 +  link: { textDecoration: 'none', color: 'inherit' },
 +})
 +
-+// Filters on the tag VALUE, not the tag id. json_tree compares every leaf, so
-+// either would match, but the value is what AlbumDetails-style links carry.
++// Filters on the tag VALUE. tagIDFilter walks json_tree and compares every
++// leaf, so an id would match too, but the value is what an AlbumDetails-style
++// link carries.
 +//
 +// The filter is embedded raw, as AlbumDetails does for genre chips. Running
-+// it through encodeURIComponent first meant react-router encoded it a second
-+// time and the separator arrived as %25-escaped, leaving a filter the album
-+// list could not read.
++// it through encodeURIComponent first meant react-router encoded the target a
++// second time, so the colon arrived as %253A and the filter was not valid
++// JSON -- which looked like the separator being at fault when it was the
++// encoding.
 +const useAlbumsOfNeighbour = (width) => {
 +  const [perPage] = useAlbumsPerPage(width)
 +
 +  return (record) =>
-+    `/album?filter={"neighbour"=${JSON.stringify([record.tagValue])}}` +
++    `/album?filter={"neighbour":${JSON.stringify([record.tagValue])}}` +
 +    `&order=ASC&sort=name&perPage=${perPage}`
 +}
 +
@@ -160,9 +162,11 @@ diff --color -ruN '--exclude=.git' a/ui/src/neighbour/NeighbourList.jsx b/ui/src
 +  return <span>{counts[record.tagValue] || 0}</span>
 +}
 +
-+// Right-aligned like the NumberField it replaces; Datagrid reads this off
-+// the child's props.
-+AlbumCountField.defaultProps = { textAlign: 'right' }
++// Right-aligned like the NumberField it replaces, and never sortable:
++// sorting is done by the server, and album_count is zero for every tag but
++// genre, so the header offered an ordering it could not deliver. Datagrid
++// reads both off the child's props.
++AlbumCountField.defaultProps = { textAlign: 'right', sortable: false }
 +
 +// Reads the `tag` resource rather than a `neighbour` one: there is no
 +// /api/neighbour, and none is needed -- a neighbour is just a value of the
