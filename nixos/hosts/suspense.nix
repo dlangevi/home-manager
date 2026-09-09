@@ -1,5 +1,14 @@
 { config, pkgs, pkgs-ollama, lib, ... }:
 
+let
+  # GTX 1060 is Pascal (sm_61); nixpkgs default cudaArches starts at sm_75, so
+  # the cached binary panics with "no kernel image is available for execution
+  # on the device". Force a local rebuild that includes Pascal.
+  ollama-cuda = pkgs-ollama.ollama.override {
+    acceleration = "cuda";
+    cudaArches = [ "sm_61" ] ++ pkgs-ollama.cudaPackages.flags.realArches;
+  };
+in
 {
   networking.hostName = "suspense";
   system.stateVersion = "23.11";
@@ -112,15 +121,19 @@
   environment.variables.GTK_IM_MODULE = lib.mkForce "";
   environment.variables.QT_IM_MODULE = lib.mkForce "";
 
+  # agent-session's `refresh-task` asks this endpoint for session labels; when
+  # nothing is listening the label silently stays empty, so the server has to be
+  # a managed service rather than a package someone starts by hand.
+  services.ollama = {
+    enable = true;
+    package = ollama-cuda;
+    # The service runs under a DynamicUser with its own /var/lib/ollama store,
+    # so the model refresh-task asks for has to be declared rather than
+    # inherited from whatever happens to sit in ~/.ollama.
+    loadModels = [ "qwen2.5:3b" ];
+  };
+
   environment.systemPackages = with pkgs; [
-    # GTX 1060 is Pascal (sm_61); nixpkgs default cudaArches starts at
-    # sm_75, so the cached binary panics with "no kernel image is
-    # available for execution on the device". Force a local rebuild
-    # that includes Pascal.
-    (pkgs-ollama.ollama.override {
-      acceleration = "cuda";
-      cudaArches = [ "sm_61" ] ++ pkgs-ollama.cudaPackages.flags.realArches;
-    })
     steam-run
     kdePackages.partitionmanager
     gparted
