@@ -184,4 +184,45 @@
       '';
     };
   };
+
+  # TEMPORARY DIAGNOSTIC -- remove once the post-resume ethernet failure is
+  # understood. Existing journal evidence shows enp4s0 (RTL8168g, r8169)
+  # regains link, a DHCP lease and a default route within ~10s of resume, yet
+  # traffic does not flow until the link is manually toggled. Nothing on the
+  # box records actual reachability during that window, so probe it: this
+  # distinguishes a wedged MAC (no packets at all) from an ARP/neighbour
+  # problem from a DNS-only failure.
+  systemd.services.resume-net-probe = {
+    description = "Probe ethernet reachability after resume (diagnostic)";
+    after = [ "suspend.target" "hibernate.target" "hybrid-sleep.target" ];
+    wantedBy = [ "post-resume.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "resume-net-probe" ''
+        PATH=${lib.makeBinPath [ pkgs.iproute2 pkgs.iputils pkgs.ethtool pkgs.dnsutils pkgs.coreutils pkgs.gnugrep ]}
+        dev=enp4s0
+        for i in $(seq 0 19); do
+          t=$((i * 6))
+          gw=$(ip -4 route show default dev $dev | grep -oP 'via \K[0-9.]+' || true)
+          echo "probe t=+''${t}s link=$(cat /sys/class/net/$dev/operstate) carrier=$(cat /sys/class/net/$dev/carrier 2>/dev/null)"
+          echo "probe t=+''${t}s addr=$(ip -br -4 addr show $dev) route_gw=''${gw:-NONE}"
+          echo "probe t=+''${t}s rx_pkts=$(cat /sys/class/net/$dev/statistics/rx_packets) tx_pkts=$(cat /sys/class/net/$dev/statistics/tx_packets) rx_err=$(cat /sys/class/net/$dev/statistics/rx_errors) rx_drop=$(cat /sys/class/net/$dev/statistics/rx_dropped) tx_err=$(cat /sys/class/net/$dev/statistics/tx_errors)"
+          if [ -n "''${gw:-}" ]; then
+            ping -c1 -W2 -I $dev "$gw" >/dev/null 2>&1 \
+              && echo "probe t=+''${t}s gw_ping=OK" || echo "probe t=+''${t}s gw_ping=FAIL"
+            echo "probe t=+''${t}s neigh=$(ip -br neigh show "$gw" dev $dev | tr -s ' ')"
+          fi
+          ping -c1 -W2 -I $dev 1.1.1.1 >/dev/null 2>&1 \
+            && echo "probe t=+''${t}s wan_ping=OK" || echo "probe t=+''${t}s wan_ping=FAIL"
+          dig +short +time=2 +tries=1 @1.1.1.1 example.com >/dev/null 2>&1 \
+            && echo "probe t=+''${t}s dns_direct=OK" || echo "probe t=+''${t}s dns_direct=FAIL"
+          dig +short +time=2 +tries=1 example.com >/dev/null 2>&1 \
+            && echo "probe t=+''${t}s dns_system=OK" || echo "probe t=+''${t}s dns_system=FAIL"
+          echo "probe t=+''${t}s eee=$(ethtool --show-eee $dev 2>/dev/null | tr '\n' ' ' | tr -s ' ')"
+          echo "probe t=+''${t}s wol=$(ethtool $dev 2>/dev/null | grep -i wake | tr -s ' ')"
+          sleep 6
+        done
+      '';
+    };
+  };
 }
