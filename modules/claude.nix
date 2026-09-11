@@ -30,6 +30,12 @@ in
 {
   home.packages = [ claudeWrapped ];
 
+  # The wrapper creates (and Syncthing-replicates) a memory dir for its cwd on
+  # every invocation, which is wrong for a process that only wants to *read*
+  # session state — agent-session's monitor polls `claude agents --json`. Point
+  # it at the unwrapped binary.
+  home.sessionVariables.AGENT_SESSION_CLAUDE_BIN = "${pkgs.claude-code}/bin/claude";
+
   home.file.".claude/CLAUDE.md".source     = link "${syncRoot}/CLAUDE.md";
   home.file.".claude/settings.json".source = link "${syncRoot}/settings.json";
   home.file.".claude/commands".source      = link "${syncRoot}/commands";
