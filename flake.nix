@@ -13,7 +13,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     dldev = {
-      url = "path:/home/dlangevi/auto/dldev";
+      url = "git+ssh://git@github.com/dlangevi/dldev.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     music-mgmt = {
