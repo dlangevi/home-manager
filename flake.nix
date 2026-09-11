@@ -42,7 +42,24 @@
       username = builtins.getEnv "USER";
       homeDirectory = builtins.getEnv "HOME";
 
-      features = import ./features.nix { inherit dldev music-mgmt plasma-manager; };
+      # Prefer a working copy of dldev when one is checked out, so edits there
+      # take effect without a push + `nix flake update` cycle; fall back to the
+      # locked GitHub input on machines that don't have it. Absolute path
+      # rather than `homeDirectory` so this doesn't change meaning under sudo.
+      #
+      # Caveat: the local flake brings its own nixpkgs (its lock pins
+      # nixos-unstable), so `inputs.dldev.inputs.nixpkgs.follows` does not
+      # apply in this branch and agent-session gets rebuilt against that pin.
+      dldevLocal = "/home/dlangevi/auto/dldev";
+      dldevSrc =
+        if builtins.pathExists (dldevLocal + "/flake.nix")
+        then builtins.getFlake "path:${dldevLocal}"
+        else dldev;
+
+      features = import ./features.nix {
+        inherit music-mgmt plasma-manager;
+        dldev = dldevSrc;
+      };
       machines = import ./machines.nix;
 
       # Hardware config comes from `nixos/hardware/<host>.nix` once it has been

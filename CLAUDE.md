@@ -49,8 +49,11 @@ home-manager. If splitting buys nothing, keep it wherever it already lives.
 - `dev` — Rust / C / Python / Node toolchains (cargo, rustc,
   rust-analyzer, gcc, cmake, python3, nodejs, yarn, etc.). Machines that
   build software.
-- `dldev` — the private `agent-session` binary from
-  `path:~/auto/dldev`. Only on machines where that path exists.
+- `dldev` — the private `agent-session` binary. The flake input points at
+  the GitHub repo, but `flake.nix` prefers a local checkout at
+  `~/auto/dldev` when one is present, so edits there apply without a
+  push + lock cycle. Note the local branch uses dldev's own nixpkgs pin
+  rather than this flake's, so `agent-session` rebuilds against it.
 - `desktop-apps` — GUI workstation apps: chat (discord, signal, teams,
   zoom), media (spotify, obs, gimp, kdenlive, mpv, smplayer), utilities
   (calibre, filezilla, anki, spectacle, kdeconnect, moonlight-qt).
