@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784157773,
-        "narHash": "sha256-LQP8hztglpIfTVN74uGJ7WglwowldmfUIIMQrQcHLAY=",
+        "lastModified": 1789165611,
+        "narHash": "sha256-UGmQkPLxMIZvC9mUNyD+8u5uqXlaCBgFthCSLeRRozg=",
         "ref": "refs/heads/main",
-        "rev": "2478e4429967afbc8aa74e4a29fab9bee1356ab3",
-        "revCount": 172,
+        "rev": "975902d96b7269eabe881202a35daa6f0f04eea3",
+        "revCount": 176,
         "type": "git",
         "url": "ssh://git@github.com/dlangevi/dldev.git"
       },
