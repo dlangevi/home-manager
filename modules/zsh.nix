@@ -62,6 +62,16 @@
       _host_title() { print -Pn "\e]2;%m\a" }
       precmd_functions+=(_host_title)
 
+      # mosh <[user@]host>: mosh's client/server vt emulation doesn't reliably
+      # forward OSC 2 title updates once tmux is in the loop (mobile-shell/
+      # mosh#477, #992), so the tab title is set here, locally, before any
+      # bytes have to survive the mosh round-trip.
+      smosh() {
+        local host=''${1#*@}
+        print -n "\e]2;''${host%%.*}\a"
+        mosh "$@"
+      }
+
       tmux-session() {
         local target name agent=0
         if [[ "$1" == "-a" || "$1" == "--agent" ]]; then
