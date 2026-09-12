@@ -14,15 +14,24 @@ let
     nativeBuildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
       wrapProgram $out/bin/claude --run '
-        cwd=$(pwd)
-        key=$(printf "%s" "$cwd" | sed "s|[/.]|-|g")
-        memSrc="${syncRoot}/memory/$key"
-        projDir="${homeDirectory}/.claude/projects/$key"
-        memDst="$projDir/memory"
-        mkdir -p "$memSrc" "$projDir"
-        if [ ! -e "$memDst" ] || [ -L "$memDst" ]; then
-          ln -sfn "$memSrc" "$memDst"
-        fi
+        # Only a session launch needs a memory dir. Management subcommands get
+        # run from anywhere — agent-session polls `claude agents` every few
+        # seconds — and minting a dir for their cwd litters the synced folder.
+        case "''${1:-}" in
+          agents|mcp|doctor|update|install|plugin|auth|setup-token|gateway|import|project|auto-mode|ultrareview)
+            : ;;
+          *)
+            cwd=$(pwd)
+            key=$(printf "%s" "$cwd" | sed "s|[/.]|-|g")
+            memSrc="${syncRoot}/memory/$key"
+            projDir="${homeDirectory}/.claude/projects/$key"
+            memDst="$projDir/memory"
+            mkdir -p "$memSrc" "$projDir"
+            if [ ! -e "$memDst" ] || [ -L "$memDst" ]; then
+              ln -sfn "$memSrc" "$memDst"
+            fi
+            ;;
+        esac
       '
     '';
   };
