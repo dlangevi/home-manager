@@ -101,7 +101,7 @@
         if ! tmux has-session -t="$name" &> /dev/null; then
           tmux new-session -s "$name" -n script -d -c "$target"
           if [ $agent -eq 1 ]; then
-            tmux new-window -t "$name:" -n agent -c "$target" agent-session
+            tmux new-window -t "$name:" -n agent -c "$target" "agent-session layout"
           fi
         fi
 
