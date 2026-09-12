@@ -63,6 +63,32 @@ let
   # only the service ports are reachable, not every service on the box.
   tailnet = "100.64.0.0/10";
   navidromePort = 4533;
+
+  # Public domain (dlangevi.com, registered through Squarespace) for a
+  # warning-free https:// on the landing page. jpc.dlangevi.com only ever
+  # resolves to this box's LAN IP (via a local DNS override on the UDM Pro,
+  # not a public record) -- it's still LAN/tailnet only, same as `dance`.
+  # It gets a real Let's Encrypt cert anyway, because cert issuance only
+  # proves DNS-zone control, not that the box is internet-reachable.
+  #
+  # Squarespace has no DNS API, so DNS-01 can't run against it directly
+  # (neither acme.sh nor certbot has a Squarespace plugin, and Squarespace's
+  # own forums confirm there isn't one). Workaround: dlangevi.com's DNS was
+  # moved to Cloudflare (nameservers repointed at the registrar), so ACME
+  # talks to Cloudflare's API instead. Cloudflare's per-subdomain "subdomain
+  # setup" (delegating only `jpc` while leaving the rest of the domain on
+  # Squarespace) is Enterprise-only, which is why this is a whole-domain
+  # migration rather than a narrower NS delegation.
+  jpcDomain = "jpc.dlangevi.com";
+  cloudflareCredentialsFile = "/var/lib/secrets/cloudflare-jpc-acme.env";
+
+  # Navidrome and Jellyfin are reverse-proxied under their own subdomains
+  # (rather than a path prefix on jpcDomain) because both are SPAs that
+  # assume they're served from the root of whatever origin they're on --
+  # same reason the landing page links to their bare ports today instead of
+  # a subpath. A wildcard on the existing DNS-01 cert covers both for free.
+  tunesSubdomain = "tunes.${jpcDomain}";
+  flixSubdomain = "flix.${jpcDomain}";
 in
 {
   # 0755 because navidrome's user shares no group with dance, so world-read is
@@ -208,6 +234,26 @@ in
     openFirewall = true;
   };
 
+  # DNS-01 against Cloudflare, for the jpc.dlangevi.com vhost below. The
+  # credentials file just needs one line -- CF_DNS_API_TOKEN=... -- for a
+  # token scoped to Zone:DNS:Edit on the delegated zone, created out of
+  # band (root:root 600; systemd reads it as root before the acme service
+  # drops privileges, so it never needs to be readable by the unprivileged
+  # `acme` user).
+  security.acme = {
+    acceptTerms = true;
+    defaults.email = "dav.langevin@gmail.com";
+    certs.${jpcDomain} = {
+      dnsProvider = "cloudflare";
+      environmentFile = cloudflareCredentialsFile;
+      # Covers tunesSubdomain and flixSubdomain too. Only possible because
+      # this is DNS-01 -- HTTP-01 can't validate a wildcard at all.
+      extraDomainNames = [ "*.${jpcDomain}" ];
+      # So nginx (which runs as its own user) can read the issued cert/key.
+      group = "nginx";
+    };
+  };
+
   # `http://dance` is a landing page for JPC residents, linking out to the
   # tools running on this box (Navidrome, Jellyfin) rather than dropping
   # straight into one of them. Each service stays reachable directly on its
@@ -215,6 +261,11 @@ in
   # assuming they're served from the root.
   services.nginx = {
     enable = true;
+    # Forwards Host/X-Real-IP/X-Forwarded-* correctly to Navidrome and
+    # Jellyfin below -- both care about the real client IP (e.g. Jellyfin's
+    # login attempt limiting) and about Host for building absolute URLs.
+    recommendedProxySettings = true;
+
     virtualHosts."dance" = {
       # Bare hostnames arrive with whatever Host header the client felt like
       # sending (`dance`, the tailnet FQDN, a raw IP), so this vhost has to
@@ -223,6 +274,36 @@ in
       locations."/" = {
         root = landingDir;
         index = "index.html";
+      };
+    };
+
+    # https:// only works for requests to jpcDomain specifically -- that's
+    # the one name the Cloudflare-issued cert above covers. Plain `dance`
+    # still only gets http://.
+    virtualHosts.${jpcDomain} = {
+      useACMEHost = jpcDomain;
+      onlySSL = true;
+      locations."/" = {
+        root = landingDir;
+        index = "index.html";
+      };
+    };
+
+    virtualHosts.${tunesSubdomain} = {
+      useACMEHost = jpcDomain;
+      onlySSL = true;
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:${toString navidromePort}";
+        proxyWebsockets = true;
+      };
+    };
+
+    virtualHosts.${flixSubdomain} = {
+      useACMEHost = jpcDomain;
+      onlySSL = true;
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:${toString jellyfinPort}";
+        proxyWebsockets = true;
       };
     };
   };
@@ -237,5 +318,7 @@ in
       ${allow tailnet jellyfinPort}
       ${allow lanSubnet 80}
       ${allow tailnet 80}
+      ${allow lanSubnet 443}
+      ${allow tailnet 443}
     '';
 }
