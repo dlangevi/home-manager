@@ -129,6 +129,28 @@ git commit -m "chore: refresh flake inputs"
 git push
 ```
 
+### Every machine at once
+
+```bash
+./bootstrap all                              # suspense, then dance
+./bootstrap all --order dance,suspense       # explicit order (may be a subset)
+./bootstrap all --update                     # refresh inputs once, then upgrade everything
+```
+
+`all` runs `./bootstrap upgrade all` on each machine in turn, stopping at the
+first failure and naming the hosts it never attempted. Every host ends up on the
+same commit: the working tree must be clean and identical to its upstream branch
+before the run starts, and remote hosts `git pull --ff-only` before upgrading.
+`--update` refreshes the flake inputs once locally, commits `flake.lock`, and
+pushes, so no host resolves its own lock.
+
+Remote `nixos-rebuild` needs a sudo password, so hosts run sequentially over
+`ssh -t` and you type it when prompted.
+
+`console` is not covered — it has no address reachable from here and relies on
+its weekly `system.autoUpgrade`. The host-to-ssh-target map lives at the top of
+`bootstrap`; add an entry there once that changes.
+
 ## NixOS layer
 
 `nixos/common.nix` holds the ~80% of `configuration.nix` shared by all

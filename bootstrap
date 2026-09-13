@@ -18,6 +18,16 @@ Usage:
       --update also refreshes flake inputs first (excludes nixpkgs-ollama,
                 which is pinned to avoid the CUDA rebuild; bump manually with
                 'nix flake lock --update-input nixpkgs-ollama')
+
+  ./bootstrap all [--order h1,h2,...] [--update]
+      Run 'upgrade all' on every managed machine, one at a time, against
+      the same commit. Requires a clean working tree that matches its
+      upstream branch; remote hosts 'git pull --ff-only' first.
+      --order  explicit host order (may be a subset); default: suspense,dance
+      --update refresh flake inputs once locally, commit and push, then
+               upgrade every host against that lock
+      console is not covered -- it is unreachable from the tailnet and
+      relies on its weekly system.autoUpgrade.
 EOF
 }
 
@@ -33,6 +43,22 @@ require_flake_root() {
     echo "Run this from the home-manager repo root." >&2
     exit 1
   fi
+}
+
+# Hosts './bootstrap all' manages, in default upgrade order. suspense first:
+# it runs the snapcast/music server that dance's snapclient connects to.
+DEFAULT_ORDER=(suspense dance)
+
+# host -> ssh destination. Unknown hosts return non-zero.
+ssh_target() {
+  case "$1" in
+    suspense) echo "dlangevi@suspense" ;;
+    dance)    echo "dance@dance" ;;
+    # console has no stable address reachable from here (not on the tailnet,
+    # hostname does not resolve), so it stays on its weekly system.autoUpgrade.
+    # Add it here once that changes.
+    *) return 1 ;;
+  esac
 }
 
 get_hostname() {
@@ -70,6 +96,21 @@ feature_catalog() {
 # in flake.lock even when a stale binary is on PATH.
 hm() {
   nix run --impure ".#home-manager" -- "$@"
+}
+
+# Update every root input except nixpkgs-ollama. Ollama's derivation triggers
+# a multi-hour CUDA rebuild for sm_61 (Pascal / GTX 1060 on suspense); pinning
+# its input means routine updates hit the store cache. Bump ollama manually
+# with:
+#   nix flake lock --update-input nixpkgs-ollama
+update_inputs() {
+  local inputs
+  inputs=$(nix eval --raw --file flake.nix --apply \
+    'f: builtins.concatStringsSep " "
+          (builtins.filter (n: n != "nixpkgs-ollama")
+            (builtins.attrNames f.inputs))')
+  # shellcheck disable=SC2086
+  nix flake update $inputs
 }
 
 do_init() {
@@ -150,18 +191,7 @@ do_upgrade() {
     exit 1
   fi
   if [[ $do_update -eq 1 ]]; then
-    # Update every root input except nixpkgs-ollama. Ollama's derivation
-    # triggers a multi-hour CUDA rebuild for sm_61 (Pascal / GTX 1060 on
-    # suspense); pinning its input means routine updates hit the store cache.
-    # Bump ollama manually with:
-    #   nix flake lock --update-input nixpkgs-ollama
-    local inputs
-    inputs=$(nix eval --raw --file flake.nix --apply \
-      'f: builtins.concatStringsSep " "
-            (builtins.filter (n: n != "nixpkgs-ollama")
-              (builtins.attrNames f.inputs))')
-    # shellcheck disable=SC2086
-    nix flake update $inputs
+    update_inputs
   fi
 
   local is_nixos=0
@@ -184,6 +214,125 @@ do_upgrade() {
   fi
 }
 
+require_clean_repo() {
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Working tree has uncommitted changes. Commit or stash them first --" >&2
+    echo "remote hosts upgrade from the pushed commit, not from this checkout." >&2
+    exit 1
+  fi
+  git fetch --quiet origin
+  local upstream head
+  if ! upstream=$(git rev-parse --verify --quiet '@{u}'); then
+    echo "Current branch has no upstream. Push it first." >&2
+    exit 1
+  fi
+  head=$(git rev-parse HEAD)
+  if [[ "$head" != "$upstream" ]]; then
+    echo "Local branch differs from its upstream. Push (or pull) first so every" >&2
+    echo "host upgrades the same commit." >&2
+    exit 1
+  fi
+}
+
+do_all() {
+  local do_update=0
+  local order=""
+  local arg
+  while [[ $# -gt 0 ]]; do
+    arg=$1
+    case "$arg" in
+      --update) do_update=1 ;;
+      --order)
+        shift
+        order=${1:-}
+        if [[ -z "$order" ]]; then
+          usage >&2
+          exit 2
+        fi
+        ;;
+      --order=*) order=${arg#--order=} ;;
+      *)
+        usage >&2
+        exit 2
+        ;;
+    esac
+    shift
+  done
+
+  require_nix
+  require_flake_root
+
+  local hosts=()
+  if [[ -n "$order" ]]; then
+    IFS=',' read -r -a hosts <<< "$order"
+  else
+    hosts=("${DEFAULT_ORDER[@]}")
+  fi
+
+  local host
+  for host in "${hosts[@]}"; do
+    if [[ -z "$host" ]]; then
+      echo "Empty host in --order list." >&2
+      exit 2
+    fi
+    if ! machine_registered "$host"; then
+      echo "$host is not registered in machines.nix." >&2
+      exit 1
+    fi
+    if ! ssh_target "$host" >/dev/null; then
+      echo "$host has no ssh target in bootstrap's host map (console is" >&2
+      echo "deliberately excluded). Add one before including it." >&2
+      exit 1
+    fi
+  done
+
+  require_clean_repo
+
+  if [[ $do_update -eq 1 ]]; then
+    echo "==> nix flake update"
+    update_inputs
+    if git diff --quiet -- flake.lock; then
+      echo "flake.lock unchanged; nothing to push."
+    else
+      git commit -q flake.lock -m "chore: update flake inputs"
+      git push -q
+      echo "flake.lock updated, committed and pushed."
+    fi
+  fi
+
+  local self total i remaining
+  self=$(get_hostname)
+  total=${#hosts[@]}
+  for i in "${!hosts[@]}"; do
+    host=${hosts[$i]}
+    echo
+    echo "==> [$((i + 1))/$total] $host"
+    if [[ "$host" == "$self" ]]; then
+      if ! do_upgrade all; then
+        remaining=("${hosts[@]:i+1}")
+        echo "FAILED on $host." >&2
+        if [[ ${#remaining[@]} -gt 0 ]]; then
+          echo "Not attempted: ${remaining[*]}" >&2
+        fi
+        exit 1
+      fi
+    else
+      if ! ssh -t "$(ssh_target "$host")" \
+        'set -e; cd ~/.config/home-manager && git pull --ff-only && ./bootstrap upgrade all'; then
+        remaining=("${hosts[@]:i+1}")
+        echo "FAILED on $host." >&2
+        if [[ ${#remaining[@]} -gt 0 ]]; then
+          echo "Not attempted: ${remaining[*]}" >&2
+        fi
+        exit 1
+      fi
+    fi
+  done
+
+  echo
+  echo "Upgraded: ${hosts[*]}"
+}
+
 case "${1:-}" in
   init)
     shift
@@ -192,6 +341,10 @@ case "${1:-}" in
   upgrade)
     shift
     do_upgrade "$@"
+    ;;
+  all)
+    shift
+    do_all "$@"
     ;;
   *)
     usage >&2
