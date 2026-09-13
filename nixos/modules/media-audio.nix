@@ -98,6 +98,7 @@ in
   systemd.tmpfiles.rules = [
     "d /srv/media 0755 root root -"
     "d ${storeDir} 0755 dance users -"
+    "d ${videoStorage} 0755 dance users -"
     "d ${moviesStoreDir} 0755 dance users -"
     "d ${showsStoreDir} 0755 dance users -"
     "d ${jpcMusicDir} 0755 dance users -"
@@ -179,6 +180,14 @@ in
       # imported playlists still need a one-time DB cleanup (see
       # music-mgmt's notes), this setting only stops new ones appearing.
       AutoImportPlaylists = false;
+
+      # Pinned explicitly even though it matches upstream's current default --
+      # this is the whole reason a local artist.jpg (populated by
+      # music-mgmt/bin/fetch-artist-images and the /grab-artist-image skill)
+      # takes effect instead of Navidrome re-fetching from Deezer/Last.fm/etc
+      # on every request. Declaring it guards against a future Navidrome
+      # release changing its own default priority order out from under this.
+      ArtistArtPriority = "artist.*, album/artist.*, external";
 
       # NEIGHBOUR records who lent a disc in the shared library; cdrip writes it
       # into every track it rips. Declaring it here is what makes Navidrome
