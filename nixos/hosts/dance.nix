@@ -1,7 +1,7 @@
 { pkgs, ... }:
 
 {
-  imports = [ ../modules/media-audio.nix ];
+  imports = [ ../modules/media-audio.nix ../modules/snapcast.nix ];
 
   networking.hostName = "dance";
   system.stateVersion = "24.11";

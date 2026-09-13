@@ -14,5 +14,6 @@
   # `path:` input, which only resolves on the machine holding the repo.
   music-server = [ ./modules/music-server.nix ];
   plasma       = [ ./modules/plasma.nix plasma-manager.homeModules.plasma-manager ];
+  snapclient   = [ ./modules/snapclient.nix ];
   streaming    = [ ./modules/streaming.nix ];
 }

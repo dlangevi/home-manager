@@ -10,8 +10,19 @@ let
   };
 in
 {
+  imports = [ ../modules/dance-storage.nix ];
+
   networking.hostName = "suspense";
   system.stateVersion = "23.11";
+
+  # The 17G swap partition declared in ../hardware/suspense.nix is an OOM
+  # safety valve for build spikes, not a way to pretend there is more RAM than
+  # there is -- 32G should be used as 32G. The kernel default of 60 is tuned
+  # for machines where paging is routine and will evict a desktop's idle
+  # working set (browser tabs, a long-lived editor) to reclaim page cache,
+  # which is felt as stutter on the next focus. 10 leaves swap almost entirely
+  # to genuine pressure without disabling it outright, as 0 effectively would.
+  boot.kernel.sysctl."vm.swappiness" = 10;
 
   # Remote access. Jellyfin (the reason this was originally enabled) has
   # moved to dance along with the media library, but keep suspense reachable

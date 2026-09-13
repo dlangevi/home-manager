@@ -29,7 +29,17 @@
       fsType = "ext4";
     };
 
-  swapDevices = [ ];
+  # sda3 -- a 17G swap partition that has existed (formatted, labelled "swap")
+  # since the pre-NixOS EndeavourOS install, but was never declared here, so
+  # nothing ever ran swapon against it.
+  #
+  # With 32G of RAM this is not about routine paging; it is headroom for the
+  # tail. Nix builds fan out to $NIX_BUILD_CORES parallel compiler processes and
+  # a single unlucky C++ or Rust link can transiently want several GB, which is
+  # exactly the case where the OOM killer takes out the build instead.
+  swapDevices = [
+    { device = "/dev/disk/by-uuid/42c8315e-8878-4c24-bea3-34145772fdfe"; }
+  ];
 
   # Enables DHCP on each ethernet and wireless interface. In case of scripted networking
   # (the default) this is the recommended approach. When using systemd-networkd it's
