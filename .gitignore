@@ -4,3 +4,15 @@
 log.txt
 result
 .direnv/
+
+# Never commit credential material. Secrets in this repo are referenced by
+# out-of-band path only (see nixos/modules/media-audio.nix, ~/.zshenv.local).
+*.env
+*.kdbx
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+secrets/

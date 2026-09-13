@@ -68,8 +68,13 @@ in
 
   # Pin dance's host key rather than leaving root to trust-on-first-use. A
   # system mount has no one at a terminal to answer the prompt.
+  #
+  # Only the name is pinned, which is all the mount needs -- `device` above
+  # connects as `dance@dance`. Addressing dance by its tailnet IP instead
+  # falls back to trust-on-first-use; deliberate, so the address does not
+  # have to live in a public repo.
   programs.ssh.knownHosts.dance = {
-    hostNames = [ "dance" "100.66.232.127" ];
+    hostNames = [ "dance" ];
     publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO3gtW3x7CwhyE+GSrfLMhO9tEJrqFYBsO6R+EtovfSF";
   };
 }

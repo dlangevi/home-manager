@@ -30,12 +30,9 @@
 
   environment.systemPackages = with pkgs; [ unzip ];
 
-  system.autoUpgrade = {
-    enable = true;
-    flake = "github:dlangevi/home-manager";
-    flags = [ "-L" ];
-    dates = "Sun 03:00";
-    randomizedDelaySec = "45min";
-    allowReboot = false;
-  };
+  # Deliberately disabled. This pulled `github:dlangevi/home-manager` weekly
+  # and applied it as root with no human in the loop, so a compromise of the
+  # GitHub account or the repo would have become root on this box within the
+  # week. dance is upgraded from suspense instead, via `./bootstrap all`.
+  system.autoUpgrade.enable = false;
 }

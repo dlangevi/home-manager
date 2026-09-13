@@ -27,7 +27,7 @@ Usage:
       --update refresh flake inputs once locally, commit and push, then
                upgrade every host against that lock
       console is not covered -- it is unreachable from the tailnet and
-      relies on its weekly system.autoUpgrade.
+      is upgraded by hand until it joins.
 EOF
 }
 
@@ -55,8 +55,8 @@ ssh_target() {
     suspense) echo "dlangevi@suspense" ;;
     dance)    echo "dance@dance" ;;
     # console has no stable address reachable from here (not on the tailnet,
-    # hostname does not resolve), so it stays on its weekly system.autoUpgrade.
-    # Add it here once that changes.
+    # hostname does not resolve), so it is upgraded by hand at the machine.
+    # Add it here once it joins the tailnet.
     *) return 1 ;;
   esac
 }

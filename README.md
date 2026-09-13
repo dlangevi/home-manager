@@ -147,9 +147,14 @@ pushes, so no host resolves its own lock.
 Remote `nixos-rebuild` needs a sudo password, so hosts run sequentially over
 `ssh -t` and you type it when prompted.
 
-`console` is not covered — it has no address reachable from here and relies on
-its weekly `system.autoUpgrade`. The host-to-ssh-target map lives at the top of
-`bootstrap`; add an entry there once that changes.
+`console` is not covered — it has no address reachable from here, so it is
+upgraded by hand at the machine. Once it joins the tailnet, add it to the
+host-to-ssh-target map at the top of `bootstrap` and it comes along with the
+rest.
+
+Unattended `system.autoUpgrade` is off everywhere on purpose: it applied the
+public repo's branch head as root with no human in the loop, which turns a
+GitHub account compromise into root on every box within a week.
 
 ## NixOS layer
 

@@ -1,4 +1,4 @@
-# The read side of the JPC music pipeline, for the machine that holds the
+# The read side of the music pipeline, for the machine that holds the
 # library (dance).
 #
 # This deliberately does NOT come from the cdrip flake in ~/auto/music-mgmt.
