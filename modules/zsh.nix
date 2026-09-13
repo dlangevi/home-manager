@@ -7,7 +7,10 @@
     DIRENV_LOG_FORMAT = "";
   };
 
-  programs.fzf.enableZshIntegration = true;
+  programs.fzf = {
+    enable = true;
+    enableZshIntegration = true;
+  };
   programs.zsh = {
     enable = true;
     oh-my-zsh = {
@@ -113,6 +116,25 @@
       }
       _tmux-session() { _path_files -/ -W ~ }
       compdef _tmux-session tmux-session
+
+      # Load per-directory zsh completions exposed via direnv (bin/_*), e.g.
+      # music-mgmt/bin/_m completes music-mgmt/bin/m. Autoloading by bare
+      # name (via fpath) rather than by path avoids zsh treating the file
+      # as needing +x.
+      autoload -Uz add-zsh-hook
+      _direnv_local_completions() {
+        [[ -d ./bin ]] || return
+        fpath=($PWD/bin $fpath)
+        local f name
+        for f in ./bin/_*(N.); do
+          name=''${f:t}
+          unfunction -- "$name" 2>/dev/null
+          autoload -Uz -- "$name"
+          compdef -- "$name" "''${name#_}"
+        done
+      }
+      add-zsh-hook chpwd _direnv_local_completions
+      _direnv_local_completions
     '';
   };
 }

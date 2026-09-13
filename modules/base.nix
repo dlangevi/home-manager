@@ -28,7 +28,6 @@
     ripgrep
     fd
     bat
-    fzf
     zoxide
     gh
     htop
