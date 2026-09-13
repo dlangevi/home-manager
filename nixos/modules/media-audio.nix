@@ -172,6 +172,14 @@ in
       # change, not on every startup.
       ScanSchedule = "@every 24h";
 
+      # Scene rips routinely ship an .m3u next to the tracks, and Navidrome
+      # auto-imports every .m3u it finds as a playlist by default -- so the
+      # Playlists view fills up with junk derived from rip artifacts rather
+      # than anything actually curated. Off by default here; existing
+      # imported playlists still need a one-time DB cleanup (see
+      # music-mgmt's notes), this setting only stops new ones appearing.
+      AutoImportPlaylists = false;
+
       # NEIGHBOUR records who lent a disc in the shared library; cdrip writes it
       # into every track it rips. Declaring it here is what makes Navidrome
       # keep the value instead of discarding it as an unknown comment.
