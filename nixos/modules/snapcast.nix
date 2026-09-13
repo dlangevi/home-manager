@@ -18,10 +18,15 @@
 # sample-aligned, with a per-client latency offset tunable at runtime from
 # snapweb to compensate for speaker distance.
 #
-# The trade-off Jukebox forces: the Navidrome *web UI* has no jukebox
-# controls, so the remote has to be a Subsonic client that implements them
-# (play:Sub, Symfonium, Feishin, DSub). Jukebox.AdminOnly defaults to true
-# upstream and is left that way, so the controlling account must be an admin.
+# The trade-off Jukebox forces: the Navidrome *web UI* has no jukebox controls
+# ("Jukebox mode is currently not supported through the Navidrome Web UI"), so
+# the remote has to be a Subsonic client that implements the jukeboxControl
+# endpoint. That is a short list -- DSub, Ultrasonic or Wavio on Android,
+# play:Sub on iOS. Notably Symfonium and Feishin do *not*, despite being the
+# obvious picks otherwise; both have the feature open as a request only.
+#
+# Jukebox.AdminOnly defaults to true upstream and is left that way, so the
+# account driving the remote must be an admin.
 { config, pkgs, lib, ... }:
 
 let
