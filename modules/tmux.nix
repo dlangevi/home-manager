@@ -103,6 +103,9 @@ in
       bind-key f run-shell "agent-session jump"
 
       # Layouts
+      # prefix+R snaps an agent-session workspace back to 70/30 after a terminal
+      # resize has skewed it; the geometry lives in agent-session, not here.
+      bind-key R run-shell "agent-session relayout"
       bind o select-layout "active-only"
       bind M-- select-layout "even-vertical"
       bind M-| select-layout "even-horizontal"
