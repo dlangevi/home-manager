@@ -7,6 +7,19 @@ cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 # TODO(bootstrap-nix): install Nix if not present. Currently the script
 # assumes `nix` is on PATH.
 
+# A freshly installed Nix ships with flakes off, so the first `./bootstrap init`
+# on a new machine would die with "experimental Nix feature 'nix-command' is
+# disabled" before it could write the nix.conf that enables them. Enable them
+# for every nix invocation this script makes instead of making the user edit
+# nix.conf by hand. Appended last so it wins over any inherited NIX_CONFIG;
+# NixOS hosts already enable both via nix.settings.experimental-features.
+if [[ -n "${NIX_CONFIG:-}" ]]; then
+  NIX_CONFIG="$NIX_CONFIG"$'\n'"extra-experimental-features = nix-command flakes"
+else
+  NIX_CONFIG="extra-experimental-features = nix-command flakes"
+fi
+export NIX_CONFIG
+
 usage() {
   cat <<'EOF'
 Usage:
