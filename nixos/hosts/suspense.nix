@@ -48,9 +48,42 @@ in
     };
   };
 
+  # Resilio Sync. Joins an existing peer set, so folders are added through the
+  # web UI rather than declared here -- a folder key is a read-write credential
+  # with no business in the world-readable store, and the module asserts
+  # sharedFolders == [] whenever the web UI is on anyway. Folder state persists
+  # in storagePath (/var/lib/resilio-sync), not in the generated config.json.
+  services.resilio = {
+    enable = true;
+    enableWebUI = true;
+    # Admin surface stays on loopback; reach it from suspense's browser or over
+    # an SSH forward.
+    httpListenAddr = "127.0.0.1";
+    httpListenPort = 9000;
+    # Fixed rather than the module default of 0 (random), so the port can be
+    # opened below and peers connect directly instead of falling back to a
+    # relay.
+    listeningPort = 44444;
+    directoryRoot = "/srv/resilio";
+  };
+
+  # rslsync owns the tree; dlangevi joins its group (see extraGroups below) and
+  # the daemon creates group-writable files so both ends can work in it.
+  # Without the UMask override resilio writes 0644/0755 and the group is
+  # read-only. The setgid bit makes new subdirectories inherit the rslsync
+  # group rather than the creator's primary group.
+  systemd.services.resilio.serviceConfig.UMask = "0002";
+  systemd.tmpfiles.rules = [ "d /srv/resilio 2770 rslsync rslsync -" ];
+
   networking.firewall = {
     enable = true;
-    allowedTCPPorts = [ 42420 ]; # vintagestory
+    allowedTCPPorts = [
+      42420 # vintagestory
+      44444 # resilio sync
+    ];
+    allowedUDPPorts = [
+      44444 # resilio sync
+    ];
     allowedTCPPortRanges = [
       { from = 1714; to = 1764; } # KDE Connect
     ];
@@ -107,7 +140,9 @@ in
     # cdrom: the USB optical drive is root:cdrom 0660. The device also
     # carries a uaccess ACL for the seated user, which makes interactive
     # sessions work and non-seated ones fail confusingly.
-    extraGroups = [ "networkmanager" "wheel" "console" "cdrom" ];
+    # rslsync: read/write access to the Resilio tree under /srv/resilio, which
+    # the daemon owns. Takes effect on the next login session, not on switch.
+    extraGroups = [ "networkmanager" "wheel" "console" "cdrom" "rslsync" ];
     packages = with pkgs; [ kdePackages.kate ];
   };
 
