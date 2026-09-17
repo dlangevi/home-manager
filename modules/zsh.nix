@@ -5,6 +5,12 @@
   home.sessionVariables = {
     EDITOR = "nvim";
     DIRENV_LOG_FORMAT = "";
+    # mosh-client otherwise rewrites the window title as "[mosh] <remote>".
+    # The tab bar only accepts a bare hostname (modules/wezterm.nix), so the
+    # prefixed form is discarded and the tab falls back to the local host --
+    # a remote tab labelled with the name of the machine you left. This is
+    # mosh's own opt-out; it is the only knob it offers.
+    MOSH_TITLE_NOPREFIX = "1";
   };
 
   programs.fzf = {
@@ -68,7 +74,9 @@
       # mosh <[user@]host>: mosh's client/server vt emulation doesn't reliably
       # forward OSC 2 title updates once tmux is in the loop (mobile-shell/
       # mosh#477, #992), so the tab title is set here, locally, before any
-      # bytes have to survive the mosh round-trip.
+      # bytes have to survive the mosh round-trip. It also covers the gap
+      # before the remote shell's first prompt, when mosh has a title of its
+      # own and nothing from the far end to put in it yet.
       smosh() {
         local host=''${1#*@}
         print -n "\e]2;''${host%%.*}\a"
