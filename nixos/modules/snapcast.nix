@@ -27,6 +27,14 @@
 #
 # Jukebox.AdminOnly defaults to true upstream and is left that way, so the
 # account driving the remote must be an admin.
+#
+# A second stream source turns the same speaker group into a Spotify Connect
+# target: librespot advertises itself over mDNS as a device any Spotify app
+# on the LAN can pick from its Connect device list, decodes whatever gets
+# cast to it with no credentials of its own, and writes raw PCM into its own
+# fifo the same way the Navidrome/mpv leg does. Which of the two fifos a
+# client's group actually plays is chosen at runtime from snapweb -- Nix only
+# wires up the sources, not the routing.
 { config, pkgs, lib, ... }:
 
 let
@@ -34,14 +42,26 @@ let
   # gets its own directory that both services can be given access to.
   fifoDir = "/run/snapcast";
   fifo = "${fifoDir}/navidrome";
+  spotifyFifo = "${fifoDir}/spotify";
 
   # Forced identically on both ends of the pipe. A fifo carries raw PCM with
   # no header describing it (see --ao-pcm-waveheader=no below), so snapserver
   # cannot detect a mismatch -- it would just play the bytes at the wrong rate.
   sampleFormat = "48000:16:2";
 
+  # Spotify's own streaming rate. librespot has no flag to resample -- only
+  # --format to change bit depth -- so this has to match what it emits rather
+  # than being picked to match the Navidrome leg.
+  spotifySampleFormat = "44100:16:2";
+
   snapPort = 1704;      # snapclient connections
   snapwebPort = 1780;   # snapweb: per-client volume and latency trim
+
+  # librespot's own HTTP handshake server (the "internal server" its
+  # --zeroconf-port advertises); pinned rather than left random so the
+  # firewall rule below can scope to a single port.
+  spotifyZeroconfPort = 5354;
+  spotifyMdnsPort = 5353;
 
   lanSubnet = "10.0.70.0/24";
   tailnet = "100.64.0.0/10";
@@ -57,6 +77,11 @@ in
   systemd.tmpfiles.rules = [
     "d ${fifoDir} 0755 root root -"
     "p ${fifo} 0640 navidrome snapfifo -"
+    # root:snapfifo rather than a fixed writer user, unlike the Navidrome
+    # fifo above: librespot has no reason to run as anything but a
+    # DynamicUser, so both ends of this pipe join the snapfifo group instead
+    # of one of them owning it outright.
+    "p ${spotifyFifo} 0660 root snapfifo -"
   ];
 
   services.snapserver = {
@@ -65,10 +90,12 @@ in
     # scoped rules the rest of this host uses.
     openFirewall = false;
     settings = {
-      # mode=read, not the default mode=create: the fifo already exists with
-      # the ownership set above and snapserver must not replace it.
-      stream.source =
-        "pipe://${fifo}?name=Navidrome&mode=read&sampleformat=${sampleFormat}";
+      # mode=read, not the default mode=create: the fifos already exist with
+      # the ownership set above and snapserver must not replace them.
+      stream.source = [
+        "pipe://${fifo}?name=Navidrome&mode=read&sampleformat=${sampleFormat}"
+        "pipe://${spotifyFifo}?name=Spotify&mode=read&sampleformat=${spotifySampleFormat}"
+      ];
       tcp-streaming = {
         enabled = true;
         port = snapPort;
@@ -83,6 +110,38 @@ in
   };
 
   systemd.services.snapserver.serviceConfig.SupplementaryGroups = [ "snapfifo" ];
+
+  # Spotify Connect receiver. No credentials configured here on purpose --
+  # zeroconf mode hands the login off to whatever official Spotify app casts
+  # to it, the same way a Sonos or Chromecast target works, so nothing
+  # secret needs to live in this repo.
+  systemd.services.librespot = {
+    # Working, but off for now -- flip back to true to re-enable.
+    enable = false;
+    description = "Spotify Connect receiver, feeding snapserver's Spotify stream";
+    wantedBy = [ "multi-user.target" ];
+    # Same ordering reason as navidrome below: snapserver must hold the read
+    # end of the fifo open before librespot's open(O_WRONLY) can succeed.
+    after = [ "network-online.target" "snapserver.service" ];
+    wants = [ "network-online.target" "snapserver.service" ];
+    serviceConfig = {
+      DynamicUser = true;
+      SupplementaryGroups = [ "snapfifo" ];
+      ExecStart = lib.concatStringsSep " " [
+        (lib.getExe pkgs.librespot)
+        "--name Snapcast"
+        "--backend pipe"
+        "--device ${spotifyFifo}"
+        "--format S16"
+        "--bitrate 320"
+        "--disable-audio-cache"
+        "--disable-credential-cache"
+        "--zeroconf-port ${toString spotifyZeroconfPort}"
+      ];
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+  };
 
   services.navidrome.settings = {
     Jukebox.Enabled = true;
@@ -149,12 +208,20 @@ in
   };
 
   networking.firewall.extraCommands =
-    let allow = subnet: port:
-      "iptables -A nixos-fw -p tcp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
+    let
+      allow = subnet: port:
+        "iptables -A nixos-fw -p tcp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
+      allowUdp = subnet: port:
+        "iptables -A nixos-fw -p udp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
     in ''
       ${allow lanSubnet snapPort}
       ${allow tailnet snapPort}
       ${allow lanSubnet snapwebPort}
       ${allow tailnet snapwebPort}
+      ${allow lanSubnet spotifyZeroconfPort}
+      ${allow tailnet spotifyZeroconfPort}
+      # mDNS is LAN-only: it relies on multicast, which Tailscale doesn't
+      # carry, so there's no tailnet rule to add here.
+      ${allowUdp lanSubnet spotifyMdnsPort}
     '';
 }

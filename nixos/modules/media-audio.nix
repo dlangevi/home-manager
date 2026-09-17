@@ -169,6 +169,8 @@ in
       MusicFolder = musicDir;
       Address = "0.0.0.0";
       Port = navidromePort;
+      # Must match a themeName exactly as exported by ui/src/themes/*.js.
+      DefaultTheme = "Squiddies Glass";
       # The library is large and mostly static. Full rescans only when tags
       # change, not on every startup.
       ScanSchedule = "@every 24h";
@@ -188,6 +190,12 @@ in
       # on every request. Declaring it guards against a future Navidrome
       # release changing its own default priority order out from under this.
       ArtistArtPriority = "artist.*, album/artist.*, external";
+
+      # Same reasoning as ArtistArtPriority above, for album covers -- pinned
+      # so a local cover.jpg (populated by music-mgmt/bin/fetch-album-covers
+      # and the /grab-album-image skill) keeps taking effect regardless of
+      # upstream default changes. Matches Navidrome's current default.
+      CoverArtPriority = "cover.*, folder.*, front.*, embedded, external";
 
       # NEIGHBOUR records who lent a disc in the shared library; cdrip writes it
       # into every track it rips. Declaring it here is what makes Navidrome
