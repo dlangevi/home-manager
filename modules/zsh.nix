@@ -30,13 +30,12 @@
     };
     shellAliases = {
       tmac = "tmux new -A -s";
-      # Applying config: hm layer, nixos layer, both. Absolute path so they
-      # work from any directory -- that is the point of having them. Renaming
-      # one means updating usage() in ./dlsys and the table in CLAUDE.md.
-      dlsys = ''~/.config/home-manager/dlsys'';
-      hms  = ''~/.config/home-manager/dlsys upgrade hm'';
-      nrs  = ''~/.config/home-manager/dlsys upgrade nixos'';
-      alls = ''~/.config/home-manager/dlsys upgrade all'';
+      # Applying config: hm layer, nixos layer, both. dlsys itself is on PATH
+      # via ~/.local/bin (see base.nix), so these work from any directory.
+      # Renaming one means updating usage() in dlsys and the table in CLAUDE.md.
+      hms  = "dlsys upgrade hm";
+      nrs  = "dlsys upgrade nixos";
+      alls = "dlsys upgrade all";
       herd-deploy = "~/auto/dl-herd/scripts/herd-deploy";
     };
     initContent = ''

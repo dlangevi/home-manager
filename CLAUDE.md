@@ -6,24 +6,24 @@ feature catalog. Machines are registered in `machines.nix`; features live in
 
 ## 0. Applying changes — use the aliases
 
-There are shell aliases for this. Suggest these rather than spelling out a
-`./dlsys` invocation; they work from any directory, which the bare script
-path does not.
+`dlsys` is on PATH (symlinked into `~/.local/bin` by `modules/base.nix`), so
+it runs from any directory. There are also shell aliases for the three common
+invocations — suggest those.
 
 | Alias  | Runs                    | Use when |
 |--------|-------------------------|----------|
-| `hms`  | `./dlsys upgrade hm`    | only `modules/` changed |
-| `nrs`  | `./dlsys upgrade nixos` | only `nixos/` changed |
-| `alls` | `./dlsys upgrade all`   | both layers changed, or unsure |
+| `hms`  | `dlsys upgrade hm`      | only `modules/` changed |
+| `nrs`  | `dlsys upgrade nixos`   | only `nixos/` changed |
+| `alls` | `dlsys upgrade all`     | both layers changed, or unsure |
 
 Defined in `modules/zsh.nix` under `shellAliases` — if you rename one there,
-fix this table and `usage()` in `./dlsys` too.
+fix this table and `usage()` in `dlsys` too.
 
 Adding a package to a `modules/` feature is `hms`. Touching a firewall port,
 a system service, or anything under `nixos/` is `nrs`. A change that spans
 both (a GUI app plus its port) is `alls`.
 
-`./dlsys rollout` is a different thing — it upgrades *every managed machine*
+`dlsys rollout` is a different thing — it upgrades *every managed machine*
 over ssh, not just this one. Never suggest it when the user asked to apply a
 local change.
 
@@ -91,12 +91,12 @@ gamescope, firewall integration.
 ## 3. Machine registry
 
 - `machines.nix` maps hostname (string) to a list of feature name strings.
-- Entries are sorted alphabetically by hostname; `./dlsys init`
+- Entries are sorted alphabetically by hostname; `dlsys init`
   enforces this.
-- To register a new machine: run `./dlsys init` on that host and answer
+- To register a new machine: run `dlsys init` on that host and answer
   yes/no for each non-`base` feature. Commit the resulting change.
 - To change a machine's feature list: edit `machines.nix` by hand, then
-  `./dlsys upgrade`.
+  `dlsys upgrade`.
 
 ## 4. Adding a new package — checklist
 

@@ -1,4 +1,4 @@
-{ pkgs, username, homeDirectory, ... }:
+{ config, pkgs, username, homeDirectory, ... }:
 
 {
   imports = [
@@ -18,6 +18,13 @@
   home.stateVersion = "25.11";
 
   programs.home-manager.enable = true;
+
+  # dlsys on PATH ($HOME/.local/bin is added in zsh.nix). An out-of-store
+  # symlink rather than a copy into the store: the script resolves its own
+  # path and cds there, and it has to land in the repo working tree -- a
+  # store copy would cd into /nix/store, where there is no flake.nix or git.
+  home.file.".local/bin/dlsys".source =
+    config.lib.file.mkOutOfStoreSymlink "${homeDirectory}/.config/home-manager/dlsys";
 
   programs.direnv = {
     enable = true;

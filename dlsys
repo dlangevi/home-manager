@@ -23,19 +23,20 @@ export NIX_CONFIG
 usage() {
   cat <<'EOF'
 Usage:
-  ./dlsys init                     Register this machine (interactive)
-  ./dlsys upgrade [target] [--update]
+  dlsys init                       Register this machine (interactive)
+  dlsys upgrade [target] [--update]
       target = hm     (default) home-manager switch only     (alias: hms)
              = nixos  nixos-rebuild switch only              (alias: nrs)
              = all    both layers                            (alias: alls)
-      The aliases are the intended entry point -- they run this script by
-      absolute path, so they work from any directory. Defined in
-      modules/zsh.nix under shellAliases.
+      The aliases are the intended entry point for these three; they are
+      defined in modules/zsh.nix under shellAliases. dlsys itself is on PATH
+      via ~/.local/bin (symlinked by modules/base.nix), so it runs from any
+      directory.
       --update also refreshes flake inputs first (excludes nixpkgs-ollama,
                 which is pinned to avoid the CUDA rebuild; bump manually with
                 'nix flake lock --update-input nixpkgs-ollama')
 
-  ./dlsys rollout [--order h1,h2,...] [--update]
+  dlsys rollout [--order h1,h2,...] [--update]
       Run 'upgrade all' on every managed machine, one at a time, against
       the same commit. Requires a clean working tree that matches its
       upstream branch; remote hosts 'git pull --ff-only' first.
@@ -61,7 +62,7 @@ require_flake_root() {
   fi
 }
 
-# Hosts './dlsys rollout' manages, in default upgrade order. suspense first:
+# Hosts 'dlsys rollout' manages, in default upgrade order. suspense first:
 # it runs the snapcast/music server that dance's snapclient connects to.
 DEFAULT_ORDER=(suspense dance)
 
@@ -139,7 +140,7 @@ do_init() {
     local existing
     existing=$(machine_features "$host")
     echo "$host is already registered as [ $existing ]." >&2
-    echo "Use ./dlsys upgrade to apply changes, or edit machines.nix to modify the feature list." >&2
+    echo "Use 'dlsys upgrade' to apply changes, or edit machines.nix to modify the feature list." >&2
     exit 1
   fi
 
@@ -203,7 +204,7 @@ do_upgrade() {
   local host
   host=$(get_hostname)
   if ! machine_registered "$host"; then
-    echo "$host is not registered. Run './dlsys init' first." >&2
+    echo "$host is not registered. Run 'dlsys init' first." >&2
     exit 1
   fi
   if [[ $do_update -eq 1 ]]; then
