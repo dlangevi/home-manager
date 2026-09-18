@@ -16,10 +16,6 @@
       url = "git+ssh://git@github.com/dlangevi/dl-herd.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    music-mgmt = {
-      url = "path:/home/dlangevi/auto/music-mgmt";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     plasma-manager = {
       url = "github:nix-community/plasma-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -27,7 +23,7 @@
     };
   };
 
-  outputs = { nixpkgs, nixpkgs-unstable, nixpkgs-ollama, home-manager, dl-herd, music-mgmt, plasma-manager, ... }:
+  outputs = { nixpkgs, nixpkgs-unstable, nixpkgs-ollama, home-manager, dl-herd, plasma-manager, ... }:
     let
       system = "x86_64-linux";
       pkgs-unstable = import nixpkgs-unstable { inherit system; config.allowUnfree = true; };
@@ -57,7 +53,7 @@
         else dl-herd;
 
       features = import ./features.nix {
-        inherit music-mgmt plasma-manager;
+        inherit plasma-manager;
         dl-herd = herdSrc;
       };
       machines = import ./machines.nix;
