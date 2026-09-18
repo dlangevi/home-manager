@@ -46,13 +46,23 @@ in
   # still has to miss the wrapper, so point it at the unwrapped binary.
   home.sessionVariables.HERD_CLAUDE_BIN = "${pkgs.claude-code}/bin/claude";
 
-  home.file.".claude/CLAUDE.md".source     = link "${syncRoot}/CLAUDE.md";
-  home.file.".claude/settings.json".source = link "${syncRoot}/settings.json";
+  # CLAUDE.md and settings.json are *written* by Claude Code itself (/effort,
+  # /config, plugin toggles). It writes atomically: tmpfile next to the first
+  # hop of the symlink, then rename. home.file's out-of-store symlink puts that
+  # first hop inside the read-only home-manager-files store dir, so every such
+  # write fails with EROFS. Link them straight at ~/Sync/claude so the tmpfile
+  # lands in a writable directory. The read-only ones stay on home.file.
   home.file.".claude/commands".source      = link "${syncRoot}/commands";
   # Personal skills, shared across every workspace rather than living in one
   # project's .claude/. The asana skill in particular is needed anywhere the
   # task system comes up, not just in ~/auto/research.
   home.file.".claude/skills".source        = link "${syncRoot}/skills";
+
+  home.activation.claudeWritableLinks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    for f in CLAUDE.md settings.json; do
+      run ln -sfn "${syncRoot}/$f" "${homeDirectory}/.claude/$f"
+    done
+  '';
 
   # Backfill on activation for projects that already have a Sync memory dir
   # but no local symlink yet (e.g. after cloning on a fresh machine).
