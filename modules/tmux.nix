@@ -41,6 +41,27 @@ let
       tmux resize-pane -t "$pane" "-$dir" "$step"
     '';
   };
+
+  # prefix+f handler. The herd layout puts a monitor in the window's second
+  # pane, so when one is already on screen a popup would just duplicate it --
+  # focus that pane instead. Exit status is the signal back to tmux: 0 means
+  # "no monitor here", which fires the if-shell branch that opens the popup.
+  # `agent-session` is herd's former name; panes started before the rename are
+  # still running under it, so match both until they cycle out.
+  monitorFocus = pkgs.writeShellApplication {
+    name = "tmux-monitor-focus";
+    runtimeInputs = with pkgs; [ tmux gawk ];
+    text = ''
+      window="$1"
+      target=$(tmux list-panes -t "$window" -F '#{pane_id} #{pane_current_command}' |
+        awk '$2 == "herd" || $2 == "agent-session" { print $1; exit }')
+      if [ -n "$target" ]; then
+        tmux select-pane -t "$target"
+        exit 1
+      fi
+      exit 0
+    '';
+  };
 in
 {
   home.packages = [ clipboardCopy ];
@@ -100,7 +121,6 @@ in
       set-option -g set-titles-string '#h'
 
       # Unbindings
-      unbind j
       unbind C-b
       unbind '"'
       unbind %
@@ -122,11 +142,14 @@ in
       bind-key -r C-k run-shell "${resizeAccel}/bin/tmux-resize-accel U #{pane_id}"
       bind-key -r C-l run-shell "${resizeAccel}/bin/tmux-resize-accel R #{pane_id}"
 
-      # Claude sessions: prefix+f opens the dashboard in a popup (it quits once a
-      # jump lands, so it never covers the window you asked for); prefix+F is the
-      # no-UI fzf jump straight to whatever wants attention.
-      bind-key f display-popup -E -w 70% -h 70% "herd monitor --jump-exits"
-      bind-key F run-shell "herd jump"
+      # Claude sessions: prefix+f shows the dashboard -- it focuses this window's
+      # monitor pane when the herd layout already has one, and only falls back to
+      # a popup (which quits once a jump lands, so it never covers the window you
+      # asked for) when the window has none. prefix+j is the no-UI fzf jump
+      # straight to whatever wants attention.
+      unbind F
+      bind-key f if-shell "${monitorFocus}/bin/tmux-monitor-focus #{window_id}" "display-popup -E -w 70% -h 70% 'herd monitor --jump-exits'"
+      bind-key j run-shell "herd jump"
 
       # Layouts
       # prefix+R snaps a herd workspace back to 70/30 after a terminal resize
@@ -136,6 +159,12 @@ in
       bind M-- select-layout "even-vertical"
       bind M-| select-layout "even-horizontal"
       bind M-r rotate-window
+
+      # prefix+r re-sources the config after an `hms`. One tmux server means
+      # this reaches every session at once. Note it is additive: a binding or
+      # option deleted from this file stays live until the server restarts,
+      # unless an explicit unbind elsewhere in this file removes it.
+      bind-key r source-file ~/.config/tmux/tmux.conf \; display-message "tmux.conf reloaded"
     '';
   };
 }
