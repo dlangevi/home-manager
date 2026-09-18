@@ -45,6 +45,10 @@ Usage:
       the same commit -- a host whose system layer is unchanged is never
       asked for a sudo password. Requires a clean working tree that matches its
       upstream branch; remote hosts 'git pull --ff-only' first.
+      Local tool repos that ship through this flake (dl-herd) are checked
+      too: a dirty one aborts the rollout, an unpushed one prompts to push
+      and then bumps that input in flake.lock -- otherwise this host builds
+      your working copy while every remote host builds the older pin.
       --order  explicit host order (may be a subset); default: suspense,dance
       --update refresh flake inputs once locally, commit and push, then
                upgrade every host against that lock
@@ -330,6 +334,72 @@ require_clean_repo() {
   fi
 }
 
+# Local tool repos whose code ships through this flake: "<flake input>=<path>".
+# Their working copy is what THIS host builds (see flake.nix's herdLocal
+# preference), but every remote host builds the revision pinned in flake.lock.
+# A rollout from a dirty or unpushed tool repo therefore deploys one thing here
+# and a different, older thing everywhere else -- silently. So rollout checks
+# them first.
+TOOL_REPOS=("dl-herd=/home/dlangevi/auto/dl-herd")
+
+# Refuse to roll out from a dirty tool repo; offer to push an unpushed one.
+# A push here only changes what origin has -- flake.lock still pins the old
+# revision -- so a successful push is followed by bumping that input, which is
+# what actually gets the new code onto the remote hosts.
+check_tool_repos() {
+  local entry name path upstream head answer
+  for entry in "${TOOL_REPOS[@]}"; do
+    name=${entry%%=*}
+    path=${entry#*=}
+    [[ -d "$path/.git" ]] || continue
+
+    echo "==> checking $name ($path)"
+
+    if [[ -n "$(git -C "$path" status --porcelain)" ]]; then
+      echo "$name has uncommitted changes. Remote hosts build the pushed" >&2
+      echo "revision, so commit and push them before rolling out:" >&2
+      echo "  git -C $path status" >&2
+      exit 1
+    fi
+
+    git -C "$path" fetch --quiet origin
+    if ! upstream=$(git -C "$path" rev-parse --verify --quiet '@{u}'); then
+      echo "$name's branch has no upstream. Push it first." >&2
+      exit 1
+    fi
+    head=$(git -C "$path" rev-parse HEAD)
+    if [[ "$head" == "$upstream" ]]; then
+      continue
+    fi
+
+    if git -C "$path" merge-base --is-ancestor "$upstream" "$head"; then
+      echo "$name is ahead of origin by $(git -C "$path" rev-list --count "$upstream..$head") commit(s)."
+      read -r -p "Push them now? [y/N]: " answer </dev/tty
+      if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+        echo "Declined. Remote hosts would get the older pinned revision." >&2
+        exit 1
+      fi
+      git -C "$path" push
+    else
+      echo "$name has diverged from its upstream (behind, or rebased)." >&2
+      echo "Reconcile it by hand before rolling out." >&2
+      exit 1
+    fi
+
+    # The push moved origin; teach flake.lock about it, or the rollout still
+    # deploys the revision it pinned before.
+    echo "==> nix flake update $name"
+    nix flake update "$name"
+    if git diff --quiet -- flake.lock; then
+      echo "flake.lock already pinned that revision."
+    else
+      git commit -q flake.lock -m "chore: bump $name"
+      git push -q
+      echo "flake.lock bumped to the new $name revision, committed and pushed."
+    fi
+  done
+}
+
 do_rollout() {
   local do_update=0
   local order=""
@@ -383,6 +453,7 @@ do_rollout() {
   done
 
   require_clean_repo
+  check_tool_repos
 
   if [[ $do_update -eq 1 ]]; then
     echo "==> nix flake update"
