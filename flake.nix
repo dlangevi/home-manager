@@ -12,8 +12,8 @@
       url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    dldev = {
-      url = "git+ssh://git@github.com/dlangevi/dldev.git";
+    dl-herd = {
+      url = "git+ssh://git@github.com/dlangevi/dl-herd.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     music-mgmt = {
@@ -27,7 +27,7 @@
     };
   };
 
-  outputs = { nixpkgs, nixpkgs-unstable, nixpkgs-ollama, home-manager, dldev, music-mgmt, plasma-manager, ... }:
+  outputs = { nixpkgs, nixpkgs-unstable, nixpkgs-ollama, home-manager, dl-herd, music-mgmt, plasma-manager, ... }:
     let
       system = "x86_64-linux";
       pkgs-unstable = import nixpkgs-unstable { inherit system; config.allowUnfree = true; };
@@ -42,23 +42,23 @@
       username = builtins.getEnv "USER";
       homeDirectory = builtins.getEnv "HOME";
 
-      # Prefer a working copy of dldev when one is checked out, so edits there
+      # Prefer a working copy of dl-herd when one is checked out, so edits there
       # take effect without a push + `nix flake update` cycle; fall back to the
       # locked GitHub input on machines that don't have it. Absolute path
       # rather than `homeDirectory` so this doesn't change meaning under sudo.
       #
       # Caveat: the local flake brings its own nixpkgs (its lock pins
-      # nixos-unstable), so `inputs.dldev.inputs.nixpkgs.follows` does not
-      # apply in this branch and agent-session gets rebuilt against that pin.
-      dldevLocal = "/home/dlangevi/auto/dldev";
-      dldevSrc =
-        if builtins.pathExists (dldevLocal + "/flake.nix")
-        then builtins.getFlake "path:${dldevLocal}"
-        else dldev;
+      # nixos-unstable), so `inputs.dl-herd.inputs.nixpkgs.follows` does not
+      # apply in this branch and herd gets rebuilt against that pin.
+      herdLocal = "/home/dlangevi/auto/dl-herd";
+      herdSrc =
+        if builtins.pathExists (herdLocal + "/flake.nix")
+        then builtins.getFlake "path:${herdLocal}"
+        else dl-herd;
 
       features = import ./features.nix {
         inherit music-mgmt plasma-manager;
-        dldev = dldevSrc;
+        dl-herd = herdSrc;
       };
       machines = import ./machines.nix;
 

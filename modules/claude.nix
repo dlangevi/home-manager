@@ -15,7 +15,7 @@ let
     postBuild = ''
       wrapProgram $out/bin/claude --run '
         # Only a session launch needs a memory dir. Management subcommands get
-        # run from anywhere — agent-session polls `claude agents` every few
+        # run from anywhere — herd polls `claude agents` every few
         # seconds — and minting a dir for their cwd litters the synced folder.
         case "''${1:-}" in
           agents|mcp|doctor|update|install|plugin|auth|setup-token|gateway|import|project|auto-mode|ultrareview)
@@ -41,9 +41,10 @@ in
 
   # The wrapper creates (and Syncthing-replicates) a memory dir for its cwd on
   # every invocation, which is wrong for a process that only wants to *read*
-  # session state — agent-session's monitor polls `claude agents --json`. Point
-  # it at the unwrapped binary.
-  home.sessionVariables.AGENT_SESSION_CLAUDE_BIN = "${pkgs.claude-code}/bin/claude";
+  # session state. herd now reads ~/.claude/sessions directly and only shells
+  # out to `claude agents --json` as a version-skew fallback, but that fallback
+  # still has to miss the wrapper, so point it at the unwrapped binary.
+  home.sessionVariables.HERD_CLAUDE_BIN = "${pkgs.claude-code}/bin/claude";
 
   home.file.".claude/CLAUDE.md".source     = link "${syncRoot}/CLAUDE.md";
   home.file.".claude/settings.json".source = link "${syncRoot}/settings.json";

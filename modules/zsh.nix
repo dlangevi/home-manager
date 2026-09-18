@@ -37,7 +37,7 @@
       hms  = ''~/.config/home-manager/dlsys upgrade hm'';
       nrs  = ''~/.config/home-manager/dlsys upgrade nixos'';
       alls = ''~/.config/home-manager/dlsys upgrade all'';
-      as-deploy = "~/auto/dldev/scripts/as-deploy";
+      herd-deploy = "~/auto/dl-herd/scripts/herd-deploy";
     };
     initContent = ''
       [[ -f ~/.zshenv.local ]] && source ~/.zshenv.local
@@ -116,7 +116,7 @@
         if ! tmux has-session -t="$name" &> /dev/null; then
           tmux new-session -s "$name" -n script -d -c "$target"
           if [ $agent -eq 1 ]; then
-            tmux new-window -t "$name:" -n agent -c "$target" "agent-session layout"
+            tmux new-window -t "$name:" -n agent -c "$target" "herd layout"
           fi
         fi
 

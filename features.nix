@@ -1,8 +1,8 @@
-{ dldev, music-mgmt, plasma-manager, ... }:
+{ dl-herd, music-mgmt, plasma-manager, ... }:
 {
   base         = [ ./modules/base.nix ];
   dev          = [ ./modules/dev.nix ];
-  dldev        = [ dldev.homeModules.default ];
+  herd         = [ dl-herd.homeModules.default ];
   desktop-apps = [ ./modules/desktop-apps.nix ];
   documents    = [ ./modules/documents.nix ];
   gaming       = [ ./modules/gaming.nix ];

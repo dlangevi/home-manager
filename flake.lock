@@ -1,23 +1,23 @@
 {
   "nodes": {
-    "dldev": {
+    "dl-herd": {
       "inputs": {
         "nixpkgs": [
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1789680000,
-        "narHash": "sha256-OxBNsVQddJr/s0/Y7nQIne4uQ+6xPoizT/ePE8ByAwQ=",
+        "lastModified": 1789707832,
+        "narHash": "sha256-6uKjdrm5R/EWaE63NCZXD2n5PSv0L61Y6KtOf/VyrPs=",
         "ref": "refs/heads/main",
-        "rev": "ff9bb405498f9c2c33f66b6ac09b9ca65ac60471",
-        "revCount": 187,
+        "rev": "79c6e9d2a340b17b806b83da2bbc91222647247f",
+        "revCount": 191,
         "type": "git",
-        "url": "ssh://git@github.com/dlangevi/dldev.git"
+        "url": "ssh://git@github.com/dlangevi/dl-herd.git"
       },
       "original": {
         "type": "git",
-        "url": "ssh://git@github.com/dlangevi/dldev.git"
+        "url": "ssh://git@github.com/dlangevi/dl-herd.git"
       }
     },
     "home-manager": {
@@ -48,8 +48,8 @@
         ]
       },
       "locked": {
-        "lastModified": 1789704029,
-        "narHash": "sha256-GfJ+g9TOI5OipxYpbqy55gxthkMJdAyYwdc9NNIf+I0=",
+        "lastModified": 1789748630,
+        "narHash": "sha256-zPTYVoCg11MPyLD8pqG7mMvX7uDYWYj35AJ+3AJMO0w=",
         "path": "/home/dlangevi/auto/music-mgmt",
         "type": "path"
       },
@@ -131,7 +131,7 @@
     },
     "root": {
       "inputs": {
-        "dldev": "dldev",
+        "dl-herd": "dl-herd",
         "home-manager": "home-manager",
         "music-mgmt": "music-mgmt",
         "nixpkgs": "nixpkgs",

@@ -168,7 +168,7 @@ in
   environment.variables.GTK_IM_MODULE = lib.mkForce "";
   environment.variables.QT_IM_MODULE = lib.mkForce "";
 
-  # agent-session's `refresh-task` asks this endpoint for session labels; when
+  # herd's `refresh-task` asks this endpoint for session labels; when
   # nothing is listening the label silently stays empty, so the server has to be
   # a managed service rather than a package someone starts by hand.
   services.ollama = {

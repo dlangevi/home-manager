@@ -125,13 +125,13 @@ in
       # Claude sessions: prefix+f opens the dashboard in a popup (it quits once a
       # jump lands, so it never covers the window you asked for); prefix+F is the
       # no-UI fzf jump straight to whatever wants attention.
-      bind-key f display-popup -E -w 70% -h 70% "agent-session monitor --jump-exits"
-      bind-key F run-shell "agent-session jump"
+      bind-key f display-popup -E -w 70% -h 70% "herd monitor --jump-exits"
+      bind-key F run-shell "herd jump"
 
       # Layouts
-      # prefix+R snaps an agent-session workspace back to 70/30 after a terminal
-      # resize has skewed it; the geometry lives in agent-session, not here.
-      bind-key R run-shell "agent-session relayout"
+      # prefix+R snaps a herd workspace back to 70/30 after a terminal resize
+      # has skewed it; the geometry lives in herd, not here.
+      bind-key R run-shell "herd relayout"
       bind o select-layout "active-only"
       bind M-- select-layout "even-vertical"
       bind M-| select-layout "even-horizontal"
