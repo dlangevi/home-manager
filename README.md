@@ -104,23 +104,42 @@ If home-manager is already installed as a NixOS module, remove it from the syste
 
 ## Updating
 
-Everyday (home-manager only, the common case):
+Everyday:
 
 ```bash
-dlsys upgrade           # same as: dlsys upgrade hm
+dlsys upgrade           # same as: dlsys upgrade auto
 ```
 
-Other targets:
+`auto` builds both layers, compares each against what is live
+(`~/.local/state/home-manager/gcroots/current-home` and `/run/current-system`),
+and switches only the ones whose store path actually moved. It prints what it
+found, and exits without doing anything when both already match. Because the
+comparison is on built output rather than on which files you edited, it is
+exact in both directions: a `flake.lock` bump that only moves the system layer
+switches only that layer, and an edit under `nixos/` that evaluates to the
+system already running is correctly a no-op. Neither is something a
+"did `nixos/` change?" check can get right.
+
+The build is not extra work — the switch that follows reuses it from the store.
+The practical win is that a home-manager-only change never prompts for sudo.
+
+Naming a target skips detection and always switches:
 
 ```bash
+dlsys upgrade hm        # home-manager switch only
 dlsys upgrade nixos     # nixos-rebuild switch only
-dlsys upgrade all       # both layers
+dlsys upgrade all       # both layers, unconditionally
 ```
 
-Refresh pinned inputs first (nixpkgs, home-manager, dldev), then switch. Combine with any target:
+Use an explicit target when re-running activation is itself the point — a unit
+you want restarted, a generation you want re-linked — since `auto` will
+correctly decide there is nothing to do.
+
+Refresh pinned inputs first (nixpkgs, home-manager, dl-herd), then switch.
+Combine with any target:
 
 ```bash
-dlsys upgrade --update              # hm, with flake update
+dlsys upgrade --update              # auto, with flake update
 dlsys upgrade all --update          # both layers, with flake update
 ```
 
@@ -140,7 +159,7 @@ dlsys rollout --order dance,suspense       # explicit order (may be a subset)
 dlsys rollout --update                     # refresh inputs once, then upgrade everything
 ```
 
-`rollout` runs `dlsys upgrade all` on each machine in turn, stopping at the
+`rollout` runs `dlsys upgrade auto` on each machine in turn, stopping at the
 first failure and naming the hosts it never attempted. Every host ends up on the
 same commit: the working tree must be clean and identical to its upstream branch
 before the run starts, and remote hosts `git pull --ff-only` before upgrading.

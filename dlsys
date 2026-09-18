@@ -25,9 +25,13 @@ usage() {
 Usage:
   dlsys init                       Register this machine (interactive)
   dlsys upgrade [target] [--update]
-      target = hm     (default) home-manager switch only     (alias: hms)
-             = nixos  nixos-rebuild switch only              (alias: nrs)
-             = all    both layers                            (alias: alls)
+      target = auto   (default) build both layers, switch only the ones
+                      whose store path differs from what is live
+             = hm     home-manager switch only                (alias: hms)
+             = nixos  nixos-rebuild switch only               (alias: nrs)
+             = all    both layers, unconditionally            (alias: alls)
+      auto never asks for sudo when the system layer is unchanged. Naming a
+      target explicitly always switches it, even if nothing differs.
       The aliases are the intended entry point for these three; they are
       defined in modules/zsh.nix under shellAliases. dlsys itself is on PATH
       via ~/.local/bin (symlinked by modules/base.nix), so it runs from any
@@ -37,8 +41,9 @@ Usage:
                 'nix flake lock --update-input nixpkgs-ollama')
 
   dlsys rollout [--order h1,h2,...] [--update]
-      Run 'upgrade all' on every managed machine, one at a time, against
-      the same commit. Requires a clean working tree that matches its
+      Run 'upgrade auto' on every managed machine, one at a time, against
+      the same commit -- a host whose system layer is unchanged is never
+      asked for a sudo password. Requires a clean working tree that matches its
       upstream branch; remote hosts 'git pull --ff-only' first.
       --order  explicit host order (may be a subset); default: suspense,dance
       --update refresh flake inputs once locally, commit and push, then
@@ -185,14 +190,58 @@ do_init() {
   echo "Registered. Run 'git push' when ready."
 }
 
+# What is live right now, per layer. Empty when the layer has never been
+# activated on this host (fresh machine, or home-manager run for the first
+# time), which callers treat as "differs".
+current_hm() {
+  readlink -f "$HOME/.local/state/home-manager/gcroots/current-home" 2>/dev/null || true
+}
+
+current_nixos() {
+  readlink -f /run/current-system 2>/dev/null || true
+}
+
+# Build a layer without creating a ./result symlink and print its store path.
+# Progress goes to stderr so the caller can capture the path from stdout.
+build_out() {
+  nix build --impure --no-link --print-out-paths "$1"
+}
+
+# Which layers actually differ from what is live. Answering this by building
+# both and comparing store paths is exact: it catches a flake.lock bump that
+# only moves one layer, and skips a nixos/ edit that evaluates to the system
+# already running. Deciding from changed file paths instead cannot do either.
+# The build is not wasted -- the switch that follows reuses it from the store.
+detect_targets() {
+  local host=$1 is_nixos=$2
+  local out=""
+  local built
+
+  echo "==> checking home-manager layer" >&2
+  built=$(build_out ".#homeConfigurations.\"$host\".activationPackage")
+  if [[ "$built" != "$(current_hm)" ]]; then
+    out+="hm "
+  fi
+
+  if [[ $is_nixos -eq 1 ]]; then
+    echo "==> checking nixos layer" >&2
+    built=$(build_out ".#nixosConfigurations.\"$host\".config.system.build.toplevel")
+    if [[ "$built" != "$(current_nixos)" ]]; then
+      out+="nixos "
+    fi
+  fi
+
+  printf '%s' "$out"
+}
+
 do_upgrade() {
   local do_update=0
-  local target="hm"
+  local target="auto"
   local arg
   for arg in "$@"; do
     case "$arg" in
       --update) do_update=1 ;;
-      hm|nixos|all) target="$arg" ;;
+      hm|nixos|all|auto) target="$arg" ;;
       *)
         usage >&2
         exit 2
@@ -216,7 +265,37 @@ do_upgrade() {
     is_nixos=1
   fi
 
-  if [[ "$target" == "nixos" || "$target" == "all" ]]; then
+  # 'auto' resolves to the layers that actually differ. An explicit target
+  # stays a command, not a suggestion: 'dlsys upgrade nixos' re-switches even
+  # when the built system matches, which is what you want when activation
+  # itself is the point (a unit to restart, a stale generation to re-link).
+  # Plain if blocks rather than `[[ ... ]] && var=1`: under `set -e` a test
+  # that lands false makes the whole line return 1 and kills the script.
+  local do_hm=0 do_nixos=0
+  if [[ "$target" == "auto" ]]; then
+    local layers
+    layers=$(detect_targets "$host" "$is_nixos")
+    if [[ -z "$layers" ]]; then
+      echo "Already up to date; nothing to switch."
+      return 0
+    fi
+    if [[ "$layers" == *hm* ]]; then
+      do_hm=1
+    fi
+    if [[ "$layers" == *nixos* ]]; then
+      do_nixos=1
+    fi
+    echo "==> changed: ${layers% }"
+  else
+    if [[ "$target" == "hm" || "$target" == "all" ]]; then
+      do_hm=1
+    fi
+    if [[ "$target" == "nixos" || "$target" == "all" ]]; then
+      do_nixos=1
+    fi
+  fi
+
+  if [[ $do_nixos -eq 1 ]]; then
     if [[ $is_nixos -eq 0 ]]; then
       echo "This host is not NixOS — 'nixos' target is unavailable." >&2
       exit 1
@@ -225,7 +304,7 @@ do_upgrade() {
     sudo nixos-rebuild switch --flake ".#$host" --impure
   fi
 
-  if [[ "$target" == "hm" || "$target" == "all" ]]; then
+  if [[ $do_hm -eq 1 ]]; then
     echo "==> home-manager switch --flake .#$host"
     hm switch --impure --flake ".#$host"
   fi
@@ -325,7 +404,7 @@ do_rollout() {
     echo
     echo "==> [$((i + 1))/$total] $host"
     if [[ "$host" == "$self" ]]; then
-      if ! do_upgrade all; then
+      if ! do_upgrade auto; then
         remaining=("${hosts[@]:i+1}")
         echo "FAILED on $host." >&2
         if [[ ${#remaining[@]} -gt 0 ]]; then
@@ -335,7 +414,7 @@ do_rollout() {
       fi
     else
       if ! ssh -t "$(ssh_target "$host")" \
-        'set -e; cd ~/.config/home-manager && git pull --ff-only && ./dlsys upgrade all'; then
+        'set -e; cd ~/.config/home-manager && git pull --ff-only && ./dlsys upgrade auto'; then
         remaining=("${hosts[@]:i+1}")
         echo "FAILED on $host." >&2
         if [[ ${#remaining[@]} -gt 0 ]]; then

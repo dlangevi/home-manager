@@ -4,27 +4,31 @@ This flake composes per-machine home-manager configurations from a role-based
 feature catalog. Machines are registered in `machines.nix`; features live in
 `features.nix` and one module per feature under `modules/`.
 
-## 0. Applying changes — use the aliases
+## 0. Applying changes
 
 `dlsys` is on PATH (symlinked into `~/.local/bin` by `modules/base.nix`), so
-it runs from any directory. There are also shell aliases for the three common
-invocations — suggest those.
+it runs from any directory. Aliases cover the three forced targets.
 
-| Alias  | Runs                    | Use when |
-|--------|-------------------------|----------|
-| `hms`  | `dlsys upgrade hm`      | only `modules/` changed |
-| `nrs`  | `dlsys upgrade nixos`   | only `nixos/` changed |
-| `alls` | `dlsys upgrade all`     | both layers changed, or unsure |
+| Command        | Runs                    | Use when |
+|----------------|-------------------------|----------|
+| `dlsys upgrade`| detect, then switch     | default — you do not need to know which layer changed |
+| `hms`          | `dlsys upgrade hm`      | only `modules/` changed |
+| `nrs`          | `dlsys upgrade nixos`   | only `nixos/` changed |
+| `alls`         | `dlsys upgrade all`     | both layers, unconditionally |
 
-Defined in `modules/zsh.nix` under `shellAliases` — if you rename one there,
-fix this table and `usage()` in `dlsys` too.
+Bare `dlsys upgrade` is target `auto`: it builds both layers, compares each
+against what is live, and switches only what moved — so it is the right
+suggestion when you are unsure, and it will not prompt for sudo on a
+home-manager-only change. The aliases are defined in `modules/zsh.nix` under
+`shellAliases`; if you rename one there, fix this table and `usage()` in
+`dlsys` too.
 
-Adding a package to a `modules/` feature is `hms`. Touching a firewall port,
-a system service, or anything under `nixos/` is `nrs`. A change that spans
-both (a GUI app plus its port) is `alls`.
+Prefer `dlsys upgrade` by default. Reach for an explicit target only when
+re-running activation is the point (restart a unit, re-link a generation),
+since `auto` correctly does nothing when the built output already matches.
 
-`dlsys rollout` is a different thing — it upgrades *every managed machine*
-over ssh, not just this one. Never suggest it when the user asked to apply a
+`dlsys rollout` is a different thing — it runs `upgrade auto` on *every
+managed machine* over ssh, not just this one. Never suggest it when the user asked to apply a
 local change.
 
 ## 1. NixOS vs home-manager
