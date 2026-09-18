@@ -33,6 +33,6 @@
   # Deliberately disabled. This pulled `github:dlangevi/home-manager` weekly
   # and applied it as root with no human in the loop, so a compromise of the
   # GitHub account or the repo would have become root on this box within the
-  # week. dance is upgraded from suspense instead, via `./bootstrap all`.
+  # week. dance is upgraded from suspense instead, via `./dlsys rollout`.
   system.autoUpgrade.enable = false;
 }

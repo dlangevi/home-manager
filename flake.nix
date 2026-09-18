@@ -97,7 +97,7 @@
       nixosConfigurations =
         builtins.mapAttrs (host: _: mkNixos host) machines;
 
-      # Expose the home-manager CLI so the bootstrap script can invoke it
+      # Expose the home-manager CLI so the dlsys script can invoke it
       # via `nix run .#home-manager` on machines that don't have it
       # installed yet.
       packages.${system}.home-manager =

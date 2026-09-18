@@ -74,7 +74,7 @@
   # and applied it as root unattended, so a compromise of the GitHub account
   # would have become root on this box within the week.
   #
-  # Until console joins the tailnet and gets an entry in bootstrap's
+  # Until console joins the tailnet and gets an entry in dlsys's
   # ssh_target map, it is upgraded by hand at the machine.
   system.autoUpgrade.enable = false;
 }

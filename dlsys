@@ -4,10 +4,10 @@ set -euo pipefail
 # Run from the script's own directory so the alias works from any CWD.
 cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 
-# TODO(bootstrap-nix): install Nix if not present. Currently the script
+# TODO(install-nix): install Nix if not present. Currently the script
 # assumes `nix` is on PATH.
 
-# A freshly installed Nix ships with flakes off, so the first `./bootstrap init`
+# A freshly installed Nix ships with flakes off, so the first `./dlsys init`
 # on a new machine would die with "experimental Nix feature 'nix-command' is
 # disabled" before it could write the nix.conf that enables them. Enable them
 # for every nix invocation this script makes instead of making the user edit
@@ -23,8 +23,8 @@ export NIX_CONFIG
 usage() {
   cat <<'EOF'
 Usage:
-  ./bootstrap init                     Register this machine (interactive)
-  ./bootstrap upgrade [target] [--update]
+  ./dlsys init                     Register this machine (interactive)
+  ./dlsys upgrade [target] [--update]
       target = hm     (default) home-manager switch only     (alias: hms)
              = nixos  nixos-rebuild switch only              (alias: nrs)
              = all    both layers                            (alias: alls)
@@ -35,7 +35,7 @@ Usage:
                 which is pinned to avoid the CUDA rebuild; bump manually with
                 'nix flake lock --update-input nixpkgs-ollama')
 
-  ./bootstrap all [--order h1,h2,...] [--update]
+  ./dlsys rollout [--order h1,h2,...] [--update]
       Run 'upgrade all' on every managed machine, one at a time, against
       the same commit. Requires a clean working tree that matches its
       upstream branch; remote hosts 'git pull --ff-only' first.
@@ -61,7 +61,7 @@ require_flake_root() {
   fi
 }
 
-# Hosts './bootstrap all' manages, in default upgrade order. suspense first:
+# Hosts './dlsys rollout' manages, in default upgrade order. suspense first:
 # it runs the snapcast/music server that dance's snapclient connects to.
 DEFAULT_ORDER=(suspense dance)
 
@@ -139,7 +139,7 @@ do_init() {
     local existing
     existing=$(machine_features "$host")
     echo "$host is already registered as [ $existing ]." >&2
-    echo "Use ./bootstrap upgrade to apply changes, or edit machines.nix to modify the feature list." >&2
+    echo "Use ./dlsys upgrade to apply changes, or edit machines.nix to modify the feature list." >&2
     exit 1
   fi
 
@@ -177,7 +177,7 @@ do_init() {
   git commit -m "chore: register $host with features $feature_list"
 
   if ! hm switch --impure --flake ".#$host"; then
-    echo "Registration committed but switch failed. Fix the issue and run './bootstrap upgrade'," >&2
+    echo "Registration committed but switch failed. Fix the issue and run './dlsys upgrade'," >&2
     echo "or undo with 'git reset --soft HEAD~1'." >&2
     exit 1
   fi
@@ -203,7 +203,7 @@ do_upgrade() {
   local host
   host=$(get_hostname)
   if ! machine_registered "$host"; then
-    echo "$host is not registered. Run './bootstrap init' first." >&2
+    echo "$host is not registered. Run './dlsys init' first." >&2
     exit 1
   fi
   if [[ $do_update -eq 1 ]]; then
@@ -250,7 +250,7 @@ require_clean_repo() {
   fi
 }
 
-do_all() {
+do_rollout() {
   local do_update=0
   local order=""
   local arg
@@ -296,7 +296,7 @@ do_all() {
       exit 1
     fi
     if ! ssh_target "$host" >/dev/null; then
-      echo "$host has no ssh target in bootstrap's host map (console is" >&2
+      echo "$host has no ssh target in dlsys's host map (console is" >&2
       echo "deliberately excluded). Add one before including it." >&2
       exit 1
     fi
@@ -334,7 +334,7 @@ do_all() {
       fi
     else
       if ! ssh -t "$(ssh_target "$host")" \
-        'set -e; cd ~/.config/home-manager && git pull --ff-only && ./bootstrap upgrade all'; then
+        'set -e; cd ~/.config/home-manager && git pull --ff-only && ./dlsys upgrade all'; then
         remaining=("${hosts[@]:i+1}")
         echo "FAILED on $host." >&2
         if [[ ${#remaining[@]} -gt 0 ]]; then
@@ -358,9 +358,9 @@ case "${1:-}" in
     shift
     do_upgrade "$@"
     ;;
-  all)
+  rollout)
     shift
-    do_all "$@"
+    do_rollout "$@"
     ;;
   *)
     usage >&2

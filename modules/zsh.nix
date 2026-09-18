@@ -32,10 +32,11 @@
       tmac = "tmux new -A -s";
       # Applying config: hm layer, nixos layer, both. Absolute path so they
       # work from any directory -- that is the point of having them. Renaming
-      # one means updating usage() in ./bootstrap and the table in CLAUDE.md.
-      hms  = ''~/.config/home-manager/bootstrap upgrade hm'';
-      nrs  = ''~/.config/home-manager/bootstrap upgrade nixos'';
-      alls = ''~/.config/home-manager/bootstrap upgrade all'';
+      # one means updating usage() in ./dlsys and the table in CLAUDE.md.
+      dlsys = ''~/.config/home-manager/dlsys'';
+      hms  = ''~/.config/home-manager/dlsys upgrade hm'';
+      nrs  = ''~/.config/home-manager/dlsys upgrade nixos'';
+      alls = ''~/.config/home-manager/dlsys upgrade all'';
       as-deploy = "~/auto/dldev/scripts/as-deploy";
     };
     initContent = ''
