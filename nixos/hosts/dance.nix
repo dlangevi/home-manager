@@ -25,6 +25,10 @@
     # stall the ~2,400 unattended per-artist invocations on a prompt.
     openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINsXz3cvNB2Hp9walgAmlqjPNkWgOKVgvtbKis1N0m/O dlangevi@uwaterloo.ca"
+      # root@suspense, for the dance-storage sshfs mount (see
+      # ../modules/dance-storage.nix). Only the public half lives here --
+      # the private key is root's on suspense.
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOnaEZ5iCiungP/aPu0OkEAc5PMRkEvAaGRXGxgKHiuT root@suspense"
     ];
   };
 

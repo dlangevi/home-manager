@@ -58,6 +58,7 @@ let
   landingDir = "/srv/www/jpc-landing";
 
   lanSubnet = "10.0.70.0/24";
+  teleportSubnet = "192.168.2.0/24"; 
   # Tailscale hands out addresses from the CGNAT range. Scoping to this rather
   # than trusting tailscale0 wholesale keeps the same posture as the LAN rule:
   # only the service ports are reachable, not every service on the box.
@@ -338,12 +339,16 @@ in
       "iptables -A nixos-fw -p tcp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
     in ''
       ${allow lanSubnet navidromePort}
+      ${allow teleportSubnet navidromePort}
       ${allow tailnet navidromePort}
       ${allow lanSubnet jellyfinPort}
+      ${allow teleportSubnet jellyfinPort}
       ${allow tailnet jellyfinPort}
       ${allow lanSubnet 80}
+      ${allow teleportSubnet 80}
       ${allow tailnet 80}
       ${allow lanSubnet 443}
+      ${allow teleportSubnet 443}
       ${allow tailnet 443}
     '';
 }
