@@ -15,5 +15,6 @@
   music-server = [ ./modules/music-server.nix ];
   plasma       = [ ./modules/plasma.nix plasma-manager.homeModules.plasma-manager ];
   snapclient   = [ ./modules/snapclient.nix ];
+  soulseek     = [ ./modules/soulseek.nix ];
   streaming    = [ ./modules/streaming.nix ];
 }

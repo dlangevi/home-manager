@@ -78,6 +78,7 @@ in
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [
+      2234  # nicotine+ (soulseek listening port; match it in Preferences -> Network)
       42420 # vintagestory
       44444 # resilio sync
     ];

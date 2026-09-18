@@ -18,6 +18,29 @@ let
       fi
     '';
   };
+
+  # Pane resize with acceleration: a fresh press nudges by 1, presses that land
+  # inside the repeat window (same direction) jump by 3. State lives in tmux
+  # user options so the script stays stateless between invocations.
+  resizeAccel = pkgs.writeShellApplication {
+    name = "tmux-resize-accel";
+    runtimeInputs = with pkgs; [ tmux coreutils ];
+    text = ''
+      dir="$1"
+      pane="$2"
+      now=$(date +%s%3N)
+      window=$(tmux show -gv repeat-time)
+      last_dir=$(tmux show -gqv @resize_dir)
+      last_ms=$(tmux show -gqv @resize_ms)
+      step=1
+      if [ "$dir" = "$last_dir" ] && [ -n "$last_ms" ] && [ $((now - last_ms)) -lt "$window" ]; then
+        step=3
+      fi
+      tmux set -g @resize_dir "$dir"
+      tmux set -g @resize_ms "$now"
+      tmux resize-pane -t "$pane" "-$dir" "$step"
+    '';
+  };
 in
 {
   home.packages = [ clipboardCopy ];
@@ -94,13 +117,16 @@ in
       bind-key -n C-down next
 
       # Pane resizing
-      bind-key -r C-h resize-pane -L
-      bind-key -r C-j resize-pane -D
-      bind-key -r C-k resize-pane -U
-      bind-key -r C-l resize-pane -R
+      bind-key -r C-h run-shell "${resizeAccel}/bin/tmux-resize-accel L #{pane_id}"
+      bind-key -r C-j run-shell "${resizeAccel}/bin/tmux-resize-accel D #{pane_id}"
+      bind-key -r C-k run-shell "${resizeAccel}/bin/tmux-resize-accel U #{pane_id}"
+      bind-key -r C-l run-shell "${resizeAccel}/bin/tmux-resize-accel R #{pane_id}"
 
-      # Claude session jump (prefix + f)
-      bind-key f run-shell "agent-session jump"
+      # Claude sessions: prefix+f opens the dashboard in a popup (it quits once a
+      # jump lands, so it never covers the window you asked for); prefix+F is the
+      # no-UI fzf jump straight to whatever wants attention.
+      bind-key f display-popup -E -w 70% -h 70% "agent-session monitor --jump-exits"
+      bind-key F run-shell "agent-session jump"
 
       # Layouts
       # prefix+R snaps an agent-session workspace back to 70/30 after a terminal

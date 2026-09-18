@@ -4,6 +4,29 @@ This flake composes per-machine home-manager configurations from a role-based
 feature catalog. Machines are registered in `machines.nix`; features live in
 `features.nix` and one module per feature under `modules/`.
 
+## 0. Applying changes — use the aliases
+
+There are shell aliases for this. Suggest these rather than spelling out a
+`./bootstrap` invocation; they work from any directory, which the bare script
+path does not.
+
+| Alias  | Runs                              | Use when |
+|--------|-----------------------------------|----------|
+| `hms`  | `./bootstrap upgrade hm`          | only `modules/` changed |
+| `nrs`  | `./bootstrap upgrade nixos`       | only `nixos/` changed |
+| `alls` | `./bootstrap upgrade all`         | both layers changed, or unsure |
+
+Defined in `modules/zsh.nix` under `shellAliases` — if you rename one there,
+fix this table and `usage()` in `./bootstrap` too.
+
+Adding a package to a `modules/` feature is `hms`. Touching a firewall port,
+a system service, or anything under `nixos/` is `nrs`. A change that spans
+both (a GUI app plus its port) is `alls`.
+
+`./bootstrap all` is a different thing — it upgrades *every managed machine*
+over ssh, not just this one. Never suggest it when the user asked to apply a
+local change.
+
 ## 1. NixOS vs home-manager
 
 The flake now owns both NixOS and home-manager layers. NixOS modules live

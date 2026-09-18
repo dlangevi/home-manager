@@ -25,9 +25,12 @@ usage() {
 Usage:
   ./bootstrap init                     Register this machine (interactive)
   ./bootstrap upgrade [target] [--update]
-      target = hm     (default) home-manager switch only
-             = nixos  nixos-rebuild switch only
-             = all    both layers
+      target = hm     (default) home-manager switch only     (alias: hms)
+             = nixos  nixos-rebuild switch only              (alias: nrs)
+             = all    both layers                            (alias: alls)
+      The aliases are the intended entry point -- they run this script by
+      absolute path, so they work from any directory. Defined in
+      modules/zsh.nix under shellAliases.
       --update also refreshes flake inputs first (excludes nixpkgs-ollama,
                 which is pinned to avoid the CUDA rebuild; bump manually with
                 'nix flake lock --update-input nixpkgs-ollama')
