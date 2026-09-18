@@ -73,16 +73,14 @@ require_flake_root() {
 
 # Hosts 'dlsys rollout' manages, in default upgrade order. suspense first:
 # it runs the snapcast/music server that dance's snapclient connects to.
-DEFAULT_ORDER=(suspense dance)
+DEFAULT_ORDER=(suspense dance console)
 
 # host -> ssh destination. Unknown hosts return non-zero.
 ssh_target() {
   case "$1" in
     suspense) echo "dlangevi@suspense" ;;
     dance)    echo "dance@dance" ;;
-    # console has no stable address reachable from here (not on the tailnet,
-    # hostname does not resolve), so it is upgraded by hand at the machine.
-    # Add it here once it joins the tailnet.
+    console)    echo "console@console" ;;
     *) return 1 ;;
   esac
 }
