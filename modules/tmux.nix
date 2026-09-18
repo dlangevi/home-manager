@@ -88,6 +88,10 @@ in
       set-window-option -g monitor-activity on
       setw -g automatic-rename
       set-option -g repeat-time 2000
+
+      # Killing the last pane of a session destroys the session; switch the
+      # client to the most recently active remaining session instead of exiting.
+      set-option -g detach-on-destroy off
       setw -g aggressive-resize on
 
       # Mouse selection -> tmux buffer with notification
