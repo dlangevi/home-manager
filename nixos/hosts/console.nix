@@ -20,6 +20,14 @@
     user = "console";
   };
 
+  # Remote access.
+  services.tailscale = {
+    enable = true;
+    # Without this the daemon cannot accept inbound UDP on 41641, so peers
+    # fall back to DERP relays -- which works, but adds latency.
+    openFirewall = true;
+  };
+
   # udev hidraw rule
   services.udev.extraRules = ''
       SUBSYSTEMS=="hidraw", ACTION=="add", MODE="0660", GROUP="console"
