@@ -7,6 +7,7 @@
   documents    = [ ./modules/documents.nix ];
   gaming       = [ ./modules/gaming.nix ];
   media        = [ ./modules/media.nix ];
+  mpd-client   = [ ./modules/mpd-client.nix ];
   # There is no `music` feature. cdrip and slsk live in ~/auto/music-mgmt and
   # are run from that tree through direnv, so nothing about them is deployed:
   # no package, no config file, nothing for this repo to install.

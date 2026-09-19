@@ -28,6 +28,13 @@
 # Jukebox.AdminOnly defaults to true upstream and is left that way, so the
 # account driving the remote must be an admin.
 #
+# The third source, and the one meant for day-to-day listening, is MPD. It
+# reads the same library Navidrome does and writes into its own fifo, but
+# unlike the Jukebox leg the control protocol is MPD's own -- so any machine
+# can drive the queue with ncmpcpp or mpc (see modules/mpd-client.nix) instead
+# of needing a Subsonic client that implements jukeboxControl. One queue and
+# one play state live on dance; every client is just a view of it.
+#
 # A second stream source turns the same speaker group into a Spotify Connect
 # target: librespot advertises itself over mDNS as a device any Spotify app
 # on the LAN can pick from its Connect device list, decodes whatever gets
@@ -43,6 +50,7 @@ let
   fifoDir = "/run/snapcast";
   fifo = "${fifoDir}/navidrome";
   spotifyFifo = "${fifoDir}/spotify";
+  mpdFifo = "${fifoDir}/mpd";
 
   # Forced identically on both ends of the pipe. A fifo carries raw PCM with
   # no header describing it (see --ao-pcm-waveheader=no below), so snapserver
@@ -53,6 +61,8 @@ let
   # --format to change bit depth -- so this has to match what it emits rather
   # than being picked to match the Navidrome leg.
   spotifySampleFormat = "44100:16:2";
+
+  mpdPort = 6600;       # MPD control protocol, for ncmpcpp/mpc on any machine
 
   snapPort = 1704;      # snapclient connections
   snapwebPort = 1780;   # snapweb: per-client volume and latency trim
@@ -82,6 +92,13 @@ in
     # DynamicUser, so both ends of this pipe join the snapfifo group instead
     # of one of them owning it outright.
     "p ${spotifyFifo} 0660 root snapfifo -"
+    # Owner mpd (writes), group snapfifo (reads) -- the same shape as the
+    # Navidrome fifo above, and load-bearing for a reason specific to MPD:
+    # upstream's unit sets PrivateUsers=yes, which maps every supplementary
+    # group the host grants it to the overflow gid. Group membership in
+    # snapfifo would therefore buy MPD nothing; owning the fifo outright is
+    # what lets it write.
+    "p ${mpdFifo} 0640 mpd snapfifo -"
   ];
 
   services.snapserver = {
@@ -95,6 +112,11 @@ in
       stream.source = [
         "pipe://${fifo}?name=Navidrome&mode=read&sampleformat=${sampleFormat}"
         "pipe://${spotifyFifo}?name=Spotify&mode=read&sampleformat=${spotifySampleFormat}"
+        # Appended rather than made the first source: snapserver assigns the
+        # first stream to clients it has never seen, and reordering would only
+        # affect those while quietly changing what a fresh client lands on.
+        # Point an existing group at "MPD" from snapweb instead.
+        "pipe://${mpdFifo}?name=MPD&mode=read&sampleformat=${sampleFormat}"
       ];
       tcp-streaming = {
         enabled = true;
@@ -110,6 +132,48 @@ in
   };
 
   systemd.services.snapserver.serviceConfig.SupplementaryGroups = [ "snapfifo" ];
+
+  # MPD, reading the same library Navidrome serves and playing it into
+  # snapcast. Nothing on this box has a sound card worth using, so the fifo is
+  # the only output -- MPD here is a queue and a decoder, never a player.
+  services.mpd = {
+    enable = true;
+    # Deliberately false, matching navidrome and snapserver above:
+    # openFirewall opens on every interface, against the scoped rules at the
+    # bottom of this file. Also silences the module's warning about binding to
+    # a non-loopback address without saying anything about the firewall.
+    openFirewall = false;
+    settings = {
+      # Read from navidrome's setting rather than repeating the path: both
+      # modules land on the same host and the two must not drift, since a
+      # track queued from one library and played from another is a hard error
+      # rather than a subtle one.
+      music_directory = config.services.navidrome.settings.MusicFolder;
+
+      # The point of the whole arrangement is that clients run elsewhere.
+      bind_to_address = "any";
+      port = mpdPort;
+
+      audio_output = [{
+        type = "fifo";
+        name = "Snapcast";
+        path = mpdFifo;
+        # Forced to match the stream source above for the same reason the
+        # Navidrome leg is: a fifo carries raw PCM with no header, so a
+        # mismatch is not detected, it is just played at the wrong rate.
+        format = sampleFormat;
+        # The fifo plugin has no hardware mixer, so without this MPD reports
+        # no volume control at all and ncmpcpp's volume keys do nothing.
+        # Snapcast's own per-client volume still applies on top; this one is
+        # the master.
+        mixer_type = "software";
+      }];
+    };
+  };
+
+  # No ordering against snapserver, unlike navidrome below. MPD's fifo output
+  # opens both ends itself, so a missing reader costs it nothing -- it
+  # discards into its own read fd rather than blocking on write.
 
   # Spotify Connect receiver. No credentials configured here on purpose --
   # zeroconf mode hands the login off to whatever official Spotify app casts
@@ -214,6 +278,8 @@ in
       allowUdp = subnet: port:
         "iptables -A nixos-fw -p udp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
     in ''
+      ${allow lanSubnet mpdPort}
+      ${allow tailnet mpdPort}
       ${allow lanSubnet snapPort}
       ${allow tailnet snapPort}
       ${allow lanSubnet snapwebPort}
