@@ -45,6 +45,41 @@
       -- the candidate window never appears.
       config.use_ime = true
 
+      -- Clickable links. The defaults already match http(s), mailto and bare
+      -- www. hosts; state them explicitly so the extras below are additions
+      -- rather than a replacement of the built-in set.
+      config.hyperlink_rules = wezterm.default_hyperlink_rules()
+      -- Dev servers are printed as host:port with no scheme, which no default
+      -- rule matches.
+      table.insert(config.hyperlink_rules, {
+        regex = [[\b(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?(/\S*)?\b]],
+        format = 'http://$0',
+      })
+
+      config.mouse_bindings = {
+        -- Plain left click opens the link under the cursor (and otherwise just
+        -- finishes a selection); no modifier, since the whole point is that a
+        -- link behaves like a link.
+        {
+          event = { Up = { streak = 1, button = 'Left' } },
+          mods = 'NONE',
+          action = wezterm.action.CompleteSelectionOrOpenLinkAtMouseCursor 'ClipboardAndPrimarySelection',
+        },
+        -- CTRL+click stays wired too, for anything that expects it.
+        {
+          event = { Up = { streak = 1, button = 'Left' } },
+          mods = 'CTRL',
+          action = wezterm.action.OpenLinkAtMouseCursor,
+        },
+        -- Swallow the matching Down event so the program underneath does not
+        -- also see the CTRL+click.
+        {
+          event = { Down = { streak = 1, button = 'Left' } },
+          mods = 'CTRL',
+          action = wezterm.action.Nop,
+        },
+      }
+
       config.keys = {
         { key = 'c', mods = 'CTRL|SHIFT', action = wezterm.action.CopyTo 'Clipboard' },
         { key = 'v', mods = 'CTRL|SHIFT', action = wezterm.action.PasteFrom 'Clipboard' },
@@ -58,6 +93,23 @@
         { key = 'w', mods = 'CTRL|SHIFT', action = wezterm.action.CloseCurrentTab { confirm = true } },
         { key = '[', mods = 'CTRL|SHIFT', action = wezterm.action.ActivateTabRelative(-1) },
         { key = ']', mods = 'CTRL|SHIFT', action = wezterm.action.ActivateTabRelative(1) },
+
+        -- Keyboard-only link opening: labels every URL on screen, type the
+        -- label to hand it to xdg-open. A mouse is never required.
+        {
+          key = 'u',
+          mods = 'CTRL|SHIFT',
+          action = wezterm.action.QuickSelectArgs {
+            label = 'open url',
+            patterns = { [[\b\w+://\S+]] },
+            action = wezterm.action_callback(function(window, pane)
+              local url = window:get_selection_text_for_pane(pane)
+              if url ~= "" then
+                wezterm.open_with(url)
+              end
+            end),
+          },
+        },
       }
 
       -- ALT+1..8 jumps straight to a tab. Chosen over CTRL|SHIFT+number because
