@@ -4,10 +4,6 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    # Pinned separately so routine `nix flake update` doesn't retrigger the
-    # ollama CUDA rebuild. Bump with:
-    #   nix flake lock --update-input nixpkgs-ollama
-    nixpkgs-ollama.url = "github:NixOS/nixpkgs/nixos-26.05";
     home-manager = {
       url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -23,11 +19,10 @@
     };
   };
 
-  outputs = { nixpkgs, nixpkgs-unstable, nixpkgs-ollama, home-manager, dl-herd, plasma-manager, ... }:
+  outputs = { nixpkgs, nixpkgs-unstable, home-manager, dl-herd, plasma-manager, ... }:
     let
       system = "x86_64-linux";
       pkgs-unstable = import nixpkgs-unstable { inherit system; config.allowUnfree = true; };
-      pkgs-ollama = import nixpkgs-ollama { inherit system; config.allowUnfree = true; };
       pkgs = import nixpkgs {
         inherit system;
         config.allowUnfree = true;
@@ -72,7 +67,6 @@
 
       mkNixos = host: nixpkgs.lib.nixosSystem {
         inherit system;
-        specialArgs = { inherit pkgs-ollama; };
         modules = [
           ./nixos/common.nix
           ./nixos/hosts/${host}.nix

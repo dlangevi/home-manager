@@ -1,14 +1,5 @@
-{ config, pkgs, pkgs-ollama, lib, ... }:
+{ config, pkgs, lib, ... }:
 
-let
-  # GTX 1060 is Pascal (sm_61); nixpkgs default cudaArches starts at sm_75, so
-  # the cached binary panics with "no kernel image is available for execution
-  # on the device". Force a local rebuild that includes Pascal.
-  ollama-cuda = pkgs-ollama.ollama.override {
-    acceleration = "cuda";
-    cudaArches = [ "sm_61" ] ++ pkgs-ollama.cudaPackages.flags.realArches;
-  };
-in
 {
   imports = [ ../modules/dance-storage.nix ];
 
@@ -98,7 +89,7 @@ in
   services.gvfs.enable = true;
   services.udisks2.enable = true;
 
-  # GPU: GeForce GTX 1060 6GB (Pascal).
+  # GPU: GeForce RTX 2070 SUPER 8GB (Turing, sm_75).
   hardware.graphics.enable = true;
   services.xserver.videoDrivers = [ "nvidia" ];
 
@@ -108,19 +99,26 @@ in
     # Saves all of VRAM across suspend rather than the bare essentials, which
     # avoids graphical corruption and app crashes on resume.
     powerManagement.enable = true;
-    # Turing or newer only.
+    # Turing or newer, *and* only meaningful for PRIME render offload on a
+    # hybrid-graphics laptop -- it powers the dGPU down between offloaded
+    # clients. This is a desktop with a single discrete card driving the
+    # displays, so there is nothing to gate; enabling it just adds an
+    # assertion failure for the missing prime.offload config.
     powerManagement.finegrained = false;
 
-    # The open kernel module supports Turing and newer; Pascal needs the
-    # proprietary one.
+    # The open kernel module supports Turing and newer, so the 2070 SUPER is
+    # eligible -- but open-module maturity on first-gen Turing GeForce is the
+    # least certain part of this move, and flipping it in the same reboot as
+    # the driver-branch jump would leave two suspects if X fails to start.
+    # Kept proprietary; flip to true as its own change.
     open = false;
 
     nvidiaSettings = true;
 
-    # NVIDIA dropped Pascal in the 595.x branch, so `stable` (595.71.05 as of
-    # nixpkgs 26.05) probes the card and ignores it, leaving X with "no screens
-    # found". 580 is the legacy branch Pascal is supported through.
-    package = config.boot.kernelPackages.nvidiaPackages.legacy_580;
+    # No `package` pin. 580 was the last branch carrying Maxwell/Pascal/Volta
+    # and had to be pinned for the GTX 1060; Turing is unaffected by that drop
+    # and rides the current branch, so the module default (595.71.05 in
+    # nixpkgs 26.05) is correct here.
   };
 
   # NVIDIA on Wayland is flaky — stay on X11
@@ -168,17 +166,28 @@ in
   environment.variables.GTK_IM_MODULE = lib.mkForce "";
   environment.variables.QT_IM_MODULE = lib.mkForce "";
 
-  # herd's `refresh-task` asks this endpoint for session labels; when
-  # nothing is listening the label silently stays empty, so the server has to be
-  # a managed service rather than a package someone starts by hand.
-  services.ollama = {
-    enable = true;
-    package = ollama-cuda;
-    # The service runs under a DynamicUser with its own /var/lib/ollama store,
-    # so the model refresh-task asks for has to be declared rather than
-    # inherited from whatever happens to sit in ~/.ollama.
-    loadModels = [ "qwen2.5:3b" ];
-  };
+  # Off for now, following the GTX 1060 -> RTX 2070 SUPER swap.
+  #
+  # Note what this silently costs: herd's `refresh-task` asks this endpoint for
+  # session labels and does not error when nothing is listening -- the label
+  # just stays empty. That is the symptom to expect, not a failed service.
+  #
+  # To re-enable, restore:
+  #
+  #   services.ollama = {
+  #     enable = true;
+  #     # nixpkgs' ollama-cuda is unfree CUDA, so cache.nixos.org never carries
+  #     # it -- llama-cpp compiles locally on every rebuild. The default
+  #     # cudaArches builds nine targets for a one-card machine; sm_75 is the
+  #     # 2070 SUPER and cuts that work by ~9x. Update it if the GPU changes,
+  #     # or ollama dies with "no kernel image is available for execution on
+  #     # the device".
+  #     package = pkgs.ollama-cuda.override { cudaArches = [ "sm_75" ]; };
+  #     # DynamicUser with its own /var/lib/ollama store, so the model has to
+  #     # be declared rather than inherited from whatever sits in ~/.ollama.
+  #     loadModels = [ "qwen2.5:3b" ];
+  #   };
+  services.ollama.enable = false;
 
   environment.systemPackages = with pkgs; [
     steam-run
