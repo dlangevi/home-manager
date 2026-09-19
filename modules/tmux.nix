@@ -132,9 +132,7 @@ in
       # Bindings
       bind-key - split-window -v
       bind-key \\ split-window -h
-      bind-key Space list-panes
       bind-key Enter break-pane
-      bind-key Space command-prompt "joinp -t:%%"
       bind-key -n C-up prev
       bind-key -n C-left prev
       bind-key -n C-right next
