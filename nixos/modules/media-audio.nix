@@ -349,7 +349,10 @@ in
     # still only gets http://.
     virtualHosts.${jpcDomain} = {
       useACMEHost = jpcDomain;
-      onlySSL = true;
+      # forceSSL rather than onlySSL: without a port-80 server block for these
+      # names, a plain http:// request falls through to the default `dance`
+      # vhost and silently serves the landing page instead of the app.
+      forceSSL = true;
       locations."/" = {
         root = landingDir;
         index = "index.html";
@@ -358,7 +361,7 @@ in
 
     virtualHosts.${tunesSubdomain} = {
       useACMEHost = jpcDomain;
-      onlySSL = true;
+      forceSSL = true;
       locations."/" = {
         proxyPass = "http://127.0.0.1:${toString navidromePort}";
         proxyWebsockets = true;
@@ -367,7 +370,7 @@ in
 
     virtualHosts.${flixSubdomain} = {
       useACMEHost = jpcDomain;
-      onlySSL = true;
+      forceSSL = true;
       locations."/" = {
         proxyPass = "http://127.0.0.1:${toString jellyfinPort}";
         proxyWebsockets = true;
@@ -376,7 +379,7 @@ in
 
     virtualHosts.${requestSubdomain} = {
       useACMEHost = jpcDomain;
-      onlySSL = true;
+      forceSSL = true;
       locations."/" = {
         proxyPass = "http://127.0.0.1:${toString ingestPort}";
       };
@@ -384,7 +387,7 @@ in
 
     virtualHosts.${radioSubdomain} = {
       useACMEHost = jpcDomain;
-      onlySSL = true;
+      forceSSL = true;
       # Static player page, separate from the stream itself.
       locations."/" = {
         root = "/srv/www/radio";
@@ -407,7 +410,7 @@ in
     # so without it the UI loads and then never updates.
     virtualHosts.${mpdSubdomain} = {
       useACMEHost = jpcDomain;
-      onlySSL = true;
+      forceSSL = true;
       locations."/" = {
         proxyPass = "http://127.0.0.1:${toString config.services.mympd.settings.http_port}";
         proxyWebsockets = true;
