@@ -78,6 +78,11 @@ let
   spotifySampleFormat = "44100:16:2";
 
   mpdPort = 6600;       # MPD control protocol, for ncmpcpp/mpc on any machine
+  # Second MPD output, alongside the fifo->snapcast leg: a plain HTTP audio
+  # stream a browser <audio> element can hit directly. Bound to loopback only
+  # -- radio.jpc.dlangevi.com (media-audio.nix) reverse-proxies it, nothing
+  # needs a direct firewall hole for this port.
+  mpdHttpdPort = 8020;
 
   snapPort = 1704;      # snapclient connections
   snapwebPort = 1780;   # snapweb: per-client volume and latency trim
@@ -181,20 +186,38 @@ in
       bind_to_address = "any";
       port = mpdPort;
 
-      audio_output = [{
-        type = "fifo";
-        name = "Snapcast";
-        path = mpdFifo;
-        # Forced to match the stream source above for the same reason the
-        # Navidrome leg is: a fifo carries raw PCM with no header, so a
-        # mismatch is not detected, it is just played at the wrong rate.
-        format = sampleFormat;
-        # The fifo plugin has no hardware mixer, so without this MPD reports
-        # no volume control at all and ncmpcpp's volume keys do nothing.
-        # Snapcast's own per-client volume still applies on top; this one is
-        # the master.
-        mixer_type = "software";
-      }];
+      audio_output = [
+        {
+          type = "fifo";
+          name = "Snapcast";
+          path = mpdFifo;
+          # Forced to match the stream source above for the same reason the
+          # Navidrome leg is: a fifo carries raw PCM with no header, so a
+          # mismatch is not detected, it is just played at the wrong rate.
+          format = sampleFormat;
+          # The fifo plugin has no hardware mixer, so without this MPD reports
+          # no volume control at all and ncmpcpp's volume keys do nothing.
+          # Snapcast's own per-client volume still applies on top; this one is
+          # the master.
+          mixer_type = "software";
+        }
+        {
+          # For radio.jpc.dlangevi.com: an independent MPD output, decoded
+          # and encoded on demand for whatever HTTP clients connect, separate
+          # from the fifo leg above (MPD supports multiple simultaneous
+          # outputs; this one has nothing to do with snapcast's shared clock).
+          type = "httpd";
+          name = "Radio";
+          bind_to_address = "127.0.0.1";
+          port = toString mpdHttpdPort;
+          encoder = "vorbis";
+          quality = "5";
+          format = "48000:16:2";
+          # Own mixer, since this leg has no bearing on the snapcast/jukebox
+          # master volume above.
+          mixer_type = "software";
+        }
+      ];
     };
   };
 

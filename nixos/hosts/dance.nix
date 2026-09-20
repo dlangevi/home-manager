@@ -1,7 +1,7 @@
 { pkgs, ... }:
 
 {
-  imports = [ ../modules/media-audio.nix ../modules/snapcast.nix ../modules/freelance-site.nix ];
+  imports = [ ../modules/media-audio.nix ../modules/snapcast.nix ../modules/freelance-site.nix ../modules/music-mgmt-ingest.nix ];
 
   networking.hostName = "dance";
   system.stateVersion = "24.11";
