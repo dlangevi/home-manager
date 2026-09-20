@@ -181,10 +181,17 @@
         split_nav('resize', 'k'),
         split_nav('resize', 'l'),
 
-        -- LEADER table: one-for-one with tmux's prefix bindings in tmux.nix, on
-        -- purpose, so the same keys mean the same things in both and the muscle
-        -- memory carries across. Keep the two tables in step by hand -- they are
-        -- parallel definitions of one keymap, and tmux.nix says the same there.
+        -- LEADER table: one-for-one with tmux's prefix table, so the same keys
+        -- mean the same things in both and the muscle memory carries across.
+        -- Keep the two in step by hand -- they are parallel definitions of one
+        -- keymap, and tmux.nix says the same there.
+        --
+        -- "tmux's prefix table" means what `tmux list-keys -T prefix` prints,
+        -- not what tmux.nix writes. tmux.nix writes 18 bindings; tmux binds 99.
+        -- The first cut of this table mirrored the file and so silently dropped
+        -- every default -- c, n, p, w, z and the rest -- which are exactly the
+        -- ones fingers reach for without thinking. Port from the running
+        -- keymap, never from the config.
         { key = '-', mods = 'LEADER', action = wezterm.action.SplitPane { direction = 'Down' } },
         { key = '\\', mods = 'LEADER', action = wezterm.action.SplitPane { direction = 'Right' } },
         { key = 'a', mods = 'LEADER|CTRL', action = wezterm.action.ActivateLastTab },
@@ -193,6 +200,44 @@
         -- unconditionally; without it an inner tmux would be undrivable.
         { key = 'a', mods = 'LEADER', action = wezterm.action.SendKey { key = 'a', mods = 'CTRL' } },
         { key = 'x', mods = 'LEADER', action = wezterm.action.CloseCurrentPane { confirm = true } },
+
+        -- tmux prefix defaults. Nothing below appears in tmux.nix because tmux
+        -- ships them; they still have to be written out here, because wezterm
+        -- ships a different set.
+        { key = 'c', mods = 'LEADER', action = wezterm.action.SpawnTab 'CurrentPaneDomain' },
+        { key = 'n', mods = 'LEADER', action = wezterm.action.ActivateTabRelative(1) },
+        { key = 'p', mods = 'LEADER', action = wezterm.action.ActivateTabRelative(-1) },
+        { key = 'w', mods = 'LEADER', action = wezterm.action.ShowTabNavigator },
+        -- tmux's `s` is choose-tree over sessions; a workspace is herd's session.
+        { key = 's', mods = 'LEADER', action = wezterm.action.ShowLauncherArgs { flags = 'FUZZY|WORKSPACES' } },
+        { key = '&', mods = 'LEADER', action = wezterm.action.CloseCurrentTab { confirm = true } },
+        { key = 'z', mods = 'LEADER', action = wezterm.action.TogglePaneZoomState },
+        { key = 'q', mods = 'LEADER', action = wezterm.action.PaneSelect },
+        { key = '[', mods = 'LEADER', action = wezterm.action.ActivateCopyMode },
+        { key = ']', mods = 'LEADER', action = wezterm.action.PasteFrom 'Clipboard' },
+        -- tmux binds break-pane on both Enter and `!`.
+        {
+          key = '!',
+          mods = 'LEADER',
+          action = wezterm.action_callback(function(_, pane)
+            pane:move_to_new_tab()
+          end),
+        },
+        -- rename-window. Setting a title explicitly is what stops
+        -- format-tab-title overwriting it, the same way an explicit
+        -- rename-window switches tmux's automatic-rename off for that window.
+        {
+          key = ',',
+          mods = 'LEADER',
+          action = wezterm.action.PromptInputLine {
+            description = 'Rename tab',
+            action = wezterm.action_callback(function(window, _, line)
+              if line and line ~= "" then
+                window:active_tab():set_title(line)
+              end
+            end),
+          },
+        },
         { key = 'r', mods = 'LEADER', action = wezterm.action.ReloadConfiguration },
         -- tmux's prefix+Enter is break-pane: this pane becomes its own tab.
         {
@@ -246,6 +291,13 @@
         -- all: wezterm has a split tree and no layout engine, so there is
         -- nothing to re-lay out. Those two stay tmux-only, deliberately unbound
         -- here rather than faked with something that does not mean the same.
+        --
+        -- The rest of tmux's prefix table that has no counterpart, listed so the
+        -- next person does not have to rediscover it: `d` (detach-client) --
+        -- wezterm's GUI is the client and there is nothing to detach from;
+        -- `Space` (next-layout) -- no layout engine, as above; `t` (clock-mode);
+        -- `;` (last-pane) -- wezterm tracks no last-used pane, only tree order,
+        -- and `q` is the honest substitute. Unbound on purpose, not forgotten.
         { key = 'o', mods = 'LEADER', action = wezterm.action.PaneSelect { mode = 'SwapWithActive' } },
         { key = 'r', mods = 'LEADER|ALT', action = wezterm.action.RotatePanes 'Clockwise' },
 
@@ -281,6 +333,17 @@
       }
 
       -- ALT+1..8 jumps straight to a tab. Chosen over CTRL|SHIFT+number because
+      -- LEADER+digit selects a tab, as tmux's prefix+digit selects a window.
+      -- baseIndex is 1 in tmux.nix, so the digit and the tab label agree and
+      -- both are one off from wezterm's zero-based ActivateTab.
+      for i = 1, 9 do
+        table.insert(config.keys, {
+          key = tostring(i),
+          mods = 'LEADER',
+          action = wezterm.action.ActivateTab(i - 1),
+        })
+      end
+
       -- tmux's prefix is C-a and its own ALT bindings are M--, M-| and M-r, so
       -- nothing here is swallowed on the way through.
       for i = 1, 8 do
@@ -300,6 +363,12 @@
         -- (nvim, less, a build) cannot leak into the tab bar. Remembering the
         -- last good value per tab beats falling back to the local hostname,
         -- which would mislabel a remote tab as this machine.
+        -- An explicit LEADER+, rename wins outright: set_title is the signal
+        -- that the user wants this tab called something, and overwriting it
+        -- with a hostname would make the rename look broken.
+        if tab.tab_title and tab.tab_title ~= "" then
+          return ' ' .. tab.tab_title .. ' '
+        end
         local host = (tab.active_pane.title or ""):match('^%s*([%w._-]+)%s*$')
         if host then
           host_by_tab[tab.tab_id] = host
