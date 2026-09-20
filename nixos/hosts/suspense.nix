@@ -1,7 +1,7 @@
 { config, pkgs, lib, ... }:
 
 {
-  imports = [ ../modules/dance-storage.nix ../modules/slskd.nix ];
+  imports = [ ../modules/dance-storage.nix ];
 
   networking.hostName = "suspense";
   system.stateVersion = "23.11";
@@ -69,13 +69,10 @@
   networking.firewall = {
     enable = true;
     allowedTCPPorts = [
+      2234  # nicotine+ (soulseek listening port; match it in Preferences -> Network)
       42420 # vintagestory
       44444 # resilio sync
     ];
-    # slskd's web API/UI (slskd.nix), tailnet-only: this is what the
-    # ingestion service on dance calls to search/enqueue downloads. Not
-    # openFirewall'd on the module itself since that has no subnet scoping.
-    interfaces.tailscale0.allowedTCPPorts = [ 5030 ];
     allowedUDPPorts = [
       44444 # resilio sync
     ];

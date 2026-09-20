@@ -24,16 +24,16 @@ in
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
 
-    # SLSKD_URL / SLSKD_API_KEY (pointing at suspense's slskd, slskd.nix)
-    # live here, created out of band like the other credentials files in
-    # this repo -- root:root 600, readable because the unit runs as root
-    # via EnvironmentFile below despite executing as user dance.
+    # SLSKD_URL / SLSKD_API_KEY (pointing at slskd on this same host,
+    # slskd.nix) live here, created out of band -- gitignored (*.env,
+    # secrets/) so it never lands in the repo despite sitting inside its
+    # checkout.
     serviceConfig = {
       Type = "simple";
       User = "dance";
       Group = "users";
       WorkingDirectory = repoDir;
-      EnvironmentFile = "/var/lib/secrets/music-mgmt-ingest.env";
+      EnvironmentFile = "/home/dance/.config/home-manager/secrets/music-mgmt-ingest.env";
       # opustags/file/curl/jq: pipeline.py and bin/fetch-*-images shell out
       # to these, matching what the flake devShell provides interactively.
       Environment = "PATH=${lib.makeBinPath [ pkgs.opustags pkgs.file pkgs.curl pkgs.jq pythonEnv ]}:/run/current-system/sw/bin";
