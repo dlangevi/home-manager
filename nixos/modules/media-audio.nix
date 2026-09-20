@@ -47,6 +47,9 @@ let
   # different accounts scoped to different libraries. Nix's only job here is
   # to make the directories exist; adding the libraries and the
   # guest-facing accounts happens in each app's own admin UI.
+  #
+  # snapcast.nix links jpcMusicDir into MPD's music root as well, so this path
+  # has a second consumer -- moving it means fixing that module too.
   jpcMusicDir = "/srv/media/jpc-music";
   jpcMoviesDir = "/srv/media/jpc-movies";
   jpcShowsDir = "/srv/media/jpc-shows";

@@ -39,9 +39,9 @@ in
 
     # mpd_music_dir is deliberately unset. It only exists so ncmpcpp can reach
     # the audio files itself (local album art, "delete from disk"), and the
-    # path differs per machine -- /srv/media/music on dance, the sshfs mount at
-    # /mnt/dance/storage/music on suspense, nothing at all elsewhere -- so a
-    # single value here would be wrong on most hosts. Everything that goes
-    # through the MPD protocol works without it.
+    # path differs per machine -- /srv/media/mpd on dance, where nothing else
+    # mounts that layout, nothing at all elsewhere -- so a single value here
+    # would be wrong on most hosts. Everything that goes through the MPD
+    # protocol works without it.
   };
 }

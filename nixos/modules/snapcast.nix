@@ -29,7 +29,7 @@
 # account driving the remote must be an admin.
 #
 # The third source, and the one meant for day-to-day listening, is MPD. It
-# reads the same library Navidrome does and writes into its own fifo, but
+# reads both libraries Navidrome serves and writes into its own fifo, but
 # unlike the Jukebox leg the control protocol is MPD's own -- so any machine
 # can drive the queue with ncmpcpp or mpc (see modules/mpd-client.nix) instead
 # of needing a Subsonic client that implements jukeboxControl. One queue and
@@ -51,6 +51,21 @@ let
   fifo = "${fifoDir}/navidrome";
   spotifyFifo = "${fifoDir}/spotify";
   mpdFifo = "${fifoDir}/mpd";
+
+  # MPD takes exactly one music_directory, but the box holds two libraries:
+  # the household's (navidrome's MusicFolder) and the neighbour-contributed
+  # one, both set up in media-audio.nix. So MPD gets its own root whose only
+  # contents are symlinks to those two, giving one database covering both with
+  # the libraries still separated as top-level folders in the browse view.
+  #
+  # Symlinks rather than the bind mounts media-audio.nix uses: those exist to
+  # dodge a traversal-permission problem (navidrome cannot enter 0700
+  # /home/dance), and a symlink would not have solved it, since traversal is
+  # checked against the target's own parents. Here both targets already sit
+  # under a world-traversable /srv/media, so there is nothing to dodge and a
+  # mount unit would only add ordering to get wrong.
+  jpcMusicDir = "/srv/media/jpc-music";
+  mpdRoot = "/srv/media/mpd";
 
   # Forced identically on both ends of the pipe. A fifo carries raw PCM with
   # no header describing it (see --ao-pcm-waveheader=no below), so snapserver
@@ -99,6 +114,13 @@ in
     # snapfifo would therefore buy MPD nothing; owning the fifo outright is
     # what lets it write.
     "p ${mpdFifo} 0640 mpd snapfifo -"
+
+    # L+ rather than L: it replaces whatever is at the path, so a retargeted
+    # library takes effect on the next activation instead of being silently
+    # skipped because the link already exists.
+    "d ${mpdRoot} 0755 root root -"
+    "L+ ${mpdRoot}/music - - - - ${config.services.navidrome.settings.MusicFolder}"
+    "L+ ${mpdRoot}/jpc-music - - - - ${jpcMusicDir}"
   ];
 
   services.snapserver = {
@@ -144,11 +166,16 @@ in
     # a non-loopback address without saying anything about the firewall.
     openFirewall = false;
     settings = {
-      # Read from navidrome's setting rather than repeating the path: both
-      # modules land on the same host and the two must not drift, since a
-      # track queued from one library and played from another is a hard error
-      # rather than a subtle one.
-      music_directory = config.services.navidrome.settings.MusicFolder;
+      # The symlink farm built in tmpfiles above, not navidrome's MusicFolder
+      # directly -- that would leave the neighbour library invisible to MPD
+      # while navidrome serves it. The two still cannot drift: one of the two
+      # links is navidrome's own setting.
+      music_directory = mpdRoot;
+
+      # Both entries in mpdRoot point outside it, so the default being "yes"
+      # is the difference between two libraries and an empty database. Pinned
+      # rather than inherited for that reason.
+      follow_outside_symlinks = true;
 
       # The point of the whole arrangement is that clients run elsewhere.
       bind_to_address = "any";
