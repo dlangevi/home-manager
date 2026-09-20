@@ -117,6 +117,17 @@ let
   # both files.
   radioSubdomain = "radio.${jpcDomain}";
   mpdHttpdPort = 8020;
+
+  # myMPD (mympd.nix) gets one too, so the web remote for the shared MPD queue
+  # is reachable by name rather than by port. Unlike the two above this one is
+  # personal rather than guest-facing -- it is on the same vhost list only
+  # because nginx and the domain live here.
+  #
+  # Each name needs its own A record override on the UDM Pro: the local
+  # override is per-name, not a wildcard, so a new subdomain resolves nowhere
+  # until that entry exists even though nginx and the cert are both ready for
+  # it. The wildcard on the ACME cert below covers it without changes.
+  mpdSubdomain = "mpd.${jpcDomain}";
 in
 {
   # 0755 because navidrome's user shares no group with dance, so world-read is
@@ -383,6 +394,23 @@ in
       # or anything else nginx needs help with -- a bare proxyPass is enough.
       locations."/stream" = {
         proxyPass = "http://127.0.0.1:${toString mpdHttpdPort}/";
+      };
+    };
+
+    # Port read from the mympd module rather than repeated, the same way
+    # snapcast.nix reads navidrome's MusicFolder -- both modules land on this
+    # host together, and a proxy pointed at the wrong port fails in a way
+    # that looks like the app being down.
+    #
+    # proxyWebsockets is load-bearing here in a way it is not for the two
+    # above: myMPD pushes every queue and play-state change over a websocket,
+    # so without it the UI loads and then never updates.
+    virtualHosts.${mpdSubdomain} = {
+      useACMEHost = jpcDomain;
+      onlySSL = true;
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:${toString config.services.mympd.settings.http_port}";
+        proxyWebsockets = true;
       };
     };
   };
