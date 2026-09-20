@@ -129,7 +129,14 @@ in
       unbind '"'
       unbind %
 
-      # Bindings
+      # Bindings. These are one half of a keymap that exists twice: wezterm
+      # multiplexes too now and its leader table in wezterm.nix mirrors this
+      # one key for key. Nothing generates one from the other, so a binding
+      # added here has to be added there by hand or the two drift apart.
+      #
+      # Nested, wezterm wins: it takes C-a unconditionally, and `bind-key a
+      # send-prefix` above is what still reaches this server from inside a
+      # wezterm pane -- wezterm's LEADER a forwards the C-a that gets here.
       bind-key - split-window -v
       bind-key \\ split-window -h
       bind-key Enter break-pane
