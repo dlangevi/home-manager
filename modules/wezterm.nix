@@ -25,12 +25,16 @@
       }
       config.font_size = 11.0
 
-      -- Splits and tabs are both wezterm's now (herd grew a wezterm backend).
-      -- The two multiplexers are never nested: inside wezterm, wezterm
-      -- multiplexes and tmux is not started; every other terminal, and any ssh
-      -- from a host without wezterm, still gets tmux. That is what lets the
-      -- leader below be C-a, the same as tmux's prefix, with no collision to
-      -- design around and no send-prefix escape hatch to write.
+      -- Splits and tabs are both wezterm's now (herd grew a wezterm backend),
+      -- but tmux is not retired and the two do get nested: ssh into a host and
+      -- run tmux there and wezterm is the outer multiplexer, both bound to C-a.
+      -- wezterm wins that, always and unconditionally -- no sniffing at what a
+      -- pane is running to decide who gets the key, because a leader that is
+      -- sometimes the leader is worse than either answer. The cost is paid the
+      -- way tmux itself pays it for tmux-in-tmux: LEADER a forwards one literal
+      -- C-a to the pane, which is `bind-key a send-prefix` in tmux.nix spelled
+      -- for wezterm. So the inner tmux is two keys away rather than one, and
+      -- nothing else about it changes.
       -- A tab is still one host: tab titles carry the hostname (see
       -- format-tab-title), which is what makes a remote tab readable.
       config.enable_tab_bar = true
@@ -178,11 +182,16 @@
         split_nav('resize', 'l'),
 
         -- LEADER table: one-for-one with tmux's prefix bindings in tmux.nix, on
-        -- purpose. The two never run nested, so the same keys can mean the same
-        -- things in both and the muscle memory carries across.
+        -- purpose, so the same keys mean the same things in both and the muscle
+        -- memory carries across. Keep the two tables in step by hand -- they are
+        -- parallel definitions of one keymap, and tmux.nix says the same there.
         { key = '-', mods = 'LEADER', action = wezterm.action.SplitPane { direction = 'Down' } },
         { key = '\\', mods = 'LEADER', action = wezterm.action.SplitPane { direction = 'Right' } },
         { key = 'a', mods = 'LEADER|CTRL', action = wezterm.action.ActivateLastTab },
+        -- The send-prefix escape, mirroring tmux.nix's `bind-key a send-prefix`.
+        -- The only way to reach a nested tmux's prefix, since wezterm takes C-a
+        -- unconditionally; without it an inner tmux would be undrivable.
+        { key = 'a', mods = 'LEADER', action = wezterm.action.SendKey { key = 'a', mods = 'CTRL' } },
         { key = 'x', mods = 'LEADER', action = wezterm.action.CloseCurrentPane { confirm = true } },
         { key = 'r', mods = 'LEADER', action = wezterm.action.ReloadConfiguration },
         -- tmux's prefix+Enter is break-pane: this pane becomes its own tab.
