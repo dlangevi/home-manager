@@ -201,6 +201,48 @@ in
         }
       end
 
+      -- Remote hosts as wezterm domains, so a tab can live on another machine
+      -- while sharing this window with local ones. tmux's answer to the same
+      -- want is `new-window ssh host`; a domain is better than that here,
+      -- because a split inside such a tab opens another channel to the *same*
+      -- host rather than silently landing back on this one, and prefix+c from
+      -- inside it (CurrentPaneDomain) makes another tab there too.
+      --
+      -- multiplexing = 'None' means plain ssh: wezterm runs a shell over the
+      -- connection and nothing wezterm-side is needed on the far end. The
+      -- alternative, wezterm's own mux server, buys tmux-style detach/reattach
+      -- -- but tmux is what is already running on these hosts for that, and a
+      -- mux server is a second answer to a solved problem plus a version-lock
+      -- between the two ends.
+      --
+      -- Note this uses wezterm's built-in ssh client, not /usr/bin/ssh: it
+      -- reads ~/.ssh/config and ~/.ssh/id_* and talks to the agent, but an
+      -- exotic ProxyJump or Match block is not guaranteed to be honoured. Keys
+      -- and a flat tailnet name are, which is all these hosts need.
+      --
+      -- console is deliberately absent: it is unreachable from the tailnet,
+      -- which is why `dlsys rollout` skips it too.
+      local ssh_hosts = {
+        { host = 'suspense', user = 'dlangevi', key = 's' },
+        { host = 'dance',    user = 'dance',    key = 'd' },
+      }
+
+      local this_host = wezterm.hostname():match('^[^.]+')
+      config.ssh_domains = {}
+      for _, h in ipairs(ssh_hosts) do
+        if h.host ~= this_host then
+          table.insert(config.ssh_domains, {
+            name = h.host,
+            remote_address = h.host,
+            username = h.user,
+            multiplexing = 'None',
+            -- Without this wezterm has no idea how to start a second program
+            -- on the far end, so splits and new tabs in the domain fail.
+            assume_shell = 'Posix',
+          })
+        end
+      end
+
       config.keys = {
         { key = 'c', mods = 'CTRL|SHIFT', action = wezterm.action.CopyTo 'Clipboard' },
         { key = 'v', mods = 'CTRL|SHIFT', action = wezterm.action.PasteFrom 'Clipboard' },
@@ -276,6 +318,10 @@ in
         -- ships them; they still have to be written out here, because wezterm
         -- ships a different set.
         { key = 'c', mods = 'LEADER', action = wezterm.action.SpawnTab 'CurrentPaneDomain' },
+        -- prefix+C is prefix+c aimed somewhere else: pick a domain, get a tab
+        -- there. The fuzzy list covers every host at one binding, and stays
+        -- correct when ssh_hosts grows.
+        { key = 'C', mods = 'LEADER', action = wezterm.action.ShowLauncherArgs { flags = 'FUZZY|DOMAINS' } },
         { key = 'n', mods = 'LEADER', action = wezterm.action.ActivateTabRelative(1) },
         { key = 'p', mods = 'LEADER', action = wezterm.action.ActivateTabRelative(-1) },
         { key = 'w', mods = 'LEADER', action = wezterm.action.ShowTabNavigator },
@@ -434,6 +480,23 @@ in
             mods = 'ALT',
             action = wezterm.action.ActivateTab(i - 1),
           })
+        end
+      end
+
+      -- One binding per remote host for the hosts reached often enough that
+      -- the launcher's extra keystroke grates: prefix+M-<initial>. Generated
+      -- from ssh_hosts, so a host added above gets its key for free. LEADER|ALT
+      -- is otherwise used only by M-r (rotate-panes), which no hostname starts
+      -- with.
+      if not passthrough then
+        for _, h in ipairs(ssh_hosts) do
+          if h.host ~= this_host then
+            table.insert(config.keys, {
+              key = h.key,
+              mods = 'LEADER|ALT',
+              action = wezterm.action.SpawnTab { DomainName = h.host },
+            })
+          end
         end
       end
 
