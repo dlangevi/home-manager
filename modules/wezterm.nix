@@ -1,9 +1,34 @@
 { pkgs, ... }:
 
+let
+  # Launches wezterm in passthrough mode -- see the long comment in the Lua
+  # below. The env var is the whole mechanism; this exists so the desktop entry
+  # has something to point Exec= at (a .desktop file cannot set environment
+  # variables) and so the mode is reachable from a shell by name.
+  weztermPassthrough = pkgs.writeShellScriptBin "wezterm-passthrough" ''
+    export WEZTERM_PASSTHROUGH=1
+    # --always-new-process: without it wezterm hands the request to an already
+    # running GUI, which was started without the variable and would open an
+    # ordinary window instead.
+    exec ${pkgs.wezterm}/bin/wezterm start --always-new-process "$@"
+  '';
+in
 {
   # Ship the font with the terminal so base works on non-NixOS hosts too.
-  home.packages = with pkgs; [ nerd-fonts.agave ];
+  home.packages = with pkgs; [ nerd-fonts.agave ] ++ [ weztermPassthrough ];
   fonts.fontconfig.enable = true;
+
+  xdg.desktopEntries.wezterm-passthrough = {
+    name = "WezTerm (passthrough)";
+    genericName = "Terminal";
+    comment = "WezTerm with the tmux keymap disabled, for driving a remote tmux";
+    exec = "${weztermPassthrough}/bin/wezterm-passthrough";
+    icon = "org.wezfurlong.wezterm";
+    terminal = false;
+    type = "Application";
+    categories = [ "System" "TerminalEmulator" ];
+    settings.StartupWMClass = "org.wezfurlong.wezterm";
+  };
 
   # The xdg-terminal-exec spec's answer to "which terminal?". KIO 6.26 still
   # uses kdeglobals TerminalApplication instead (set in plasma.nix), so this is
@@ -16,6 +41,44 @@
     extraConfig = ''
       local wezterm = require 'wezterm'
       local config = wezterm.config_builder()
+
+      -- Passthrough profile. Everything below that mirrors tmux -- the C-a
+      -- leader and its whole table, the bare C-arrow and C-hjkl bindings --
+      -- exists because wezterm is the outer multiplexer on this machine. Point
+      -- a window at a *remote* tmux instead and every one of those keys is a
+      -- key the remote server never sees: C-a is swallowed, C-hjkl never
+      -- reaches vim-tmux-navigator, C-arrow changes the wrong window. So a
+      -- passthrough window keeps the look (fonts, colours, links, copy/paste)
+      -- and drops the multiplexing: wezterm becomes a plain terminal and the
+      -- remote tmux gets its prefix back, unprefixed and one key away.
+      --
+      -- Two ways in, because there are two ways such a window gets opened:
+      -- WEZTERM_PASSTHROUGH in the environment (what the desktop launcher and
+      -- the wezterm-passthrough wrapper set), and `wezterm ssh <host>`, which
+      -- is remote by definition. wezterm's Lua exposes no argv, so the second
+      -- is read off /proc -- Linux-only, which every machine this flake targets
+      -- is; a platform without it just falls back to the env var.
+      local function detect_passthrough()
+        if os.getenv('WEZTERM_PASSTHROUGH') then
+          return true
+        end
+        local f = io.open('/proc/self/cmdline', 'rb')
+        if not f then
+          return false
+        end
+        local argv = f:read('*a') or ""
+        f:close()
+        -- NUL-separated. A bare `ssh` argument is either the `wezterm ssh`
+        -- subcommand or `wezterm start -- ssh host`; both are remote.
+        for arg in argv:gmatch('[^\0]+') do
+          if arg == 'ssh' then
+            return true
+          end
+        end
+        return false
+      end
+
+      local passthrough = detect_passthrough()
 
       config.color_scheme = 'Sonokai (Gogh)'
       config.font = wezterm.font_with_fallback {
@@ -88,7 +151,10 @@
         },
       }
       -- C-a, matching tmux's prefix exactly; 2000ms matches tmux's repeat-time.
-      config.leader = { key = 'a', mods = 'CTRL', timeout_milliseconds = 2000 }
+      -- Left unset in passthrough windows, so C-a is just C-a.
+      if not passthrough then
+        config.leader = { key = 'a', mods = 'CTRL', timeout_milliseconds = 2000 }
+      end
 
       -- smart-splits.nvim integration. neovim advertises itself by setting the
       -- IS_NVIM user var (the plugin does this on load, no nvim-side config
@@ -165,6 +231,11 @@
             end),
           },
         },
+      }
+
+      -- Everything from here to the end of tmux_keys is tmux's keymap wearing
+      -- wezterm's clothes, and so is exactly what a passthrough window omits.
+      local tmux_keys = {
         -- Bare C-arrow cycles tabs with no prefix, as in tmux.
         { key = 'UpArrow', mods = 'CTRL', action = wezterm.action.ActivateTabRelative(-1) },
         { key = 'LeftArrow', mods = 'CTRL', action = wezterm.action.ActivateTabRelative(-1) },
@@ -320,6 +391,12 @@
         },
       }
 
+      if not passthrough then
+        for _, key in ipairs(tmux_keys) do
+          table.insert(config.keys, key)
+        end
+      end
+
       -- Bare h/j/k/l inside the resize table; anything else falls out of it.
       config.key_tables = {
         resize = {
@@ -336,22 +413,28 @@
       -- LEADER+digit selects a tab, as tmux's prefix+digit selects a window.
       -- baseIndex is 1 in tmux.nix, so the digit and the tab label agree and
       -- both are one off from wezterm's zero-based ActivateTab.
-      for i = 1, 9 do
-        table.insert(config.keys, {
-          key = tostring(i),
-          mods = 'LEADER',
-          action = wezterm.action.ActivateTab(i - 1),
-        })
+      if not passthrough then
+        for i = 1, 9 do
+          table.insert(config.keys, {
+            key = tostring(i),
+            mods = 'LEADER',
+            action = wezterm.action.ActivateTab(i - 1),
+          })
+        end
       end
 
       -- tmux's prefix is C-a and its own ALT bindings are M--, M-| and M-r, so
       -- nothing here is swallowed on the way through.
-      for i = 1, 8 do
-        table.insert(config.keys, {
-          key = tostring(i),
-          mods = 'ALT',
-          action = wezterm.action.ActivateTab(i - 1),
-        })
+      -- ALT digits go too: a passthrough window has no local tabs worth
+      -- jumping to, and the remote side may well want the key.
+      if not passthrough then
+        for i = 1, 8 do
+          table.insert(config.keys, {
+            key = tostring(i),
+            mods = 'ALT',
+            action = wezterm.action.ActivateTab(i - 1),
+          })
+        end
       end
 
       -- Tab title = hostname of the machine that tab's shell is on. The title
@@ -397,6 +480,10 @@
       wezterm.on('update-right-status', function(window)
         local now = wezterm.time.now()
         window:set_right_status(wezterm.format {
+          -- A passthrough window looks identical otherwise, and "why did my
+          -- prefix stop working" is a bad way to find out which one this is.
+          { Foreground = { AnsiColor = 'Olive' } },
+          { Text = passthrough and 'passthrough  ' or "" },
           { Foreground = { AnsiColor = 'Blue' } },
           { Text = window:active_workspace() .. '  ' },
           { Foreground = { AnsiColor = 'Fuchsia' } },
