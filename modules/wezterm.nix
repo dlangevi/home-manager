@@ -127,6 +127,41 @@ in
       -- Costs running the update-status callback below 10x a second.
       config.status_update_interval = 100
 
+      -- Latency budget for a keystroke. None of this mattered under tmux,
+      -- because tmux was never in the input-to-pixel path: wezterm owned a
+      -- local pty, wrote the key to an fd, and its reader thread woke on the
+      -- echo. With default_domain (below) every pane -- local ones too -- is
+      -- a mux *client* pane, so the echo crosses a codec round trip and then
+      -- has to wait for a frame. Each line here shaves one part of that.
+
+      -- Default 60 puts up to 16ms between the delta arriving and the pixel.
+      -- Nothing here is GPU-bound, so the extra frames are close to free.
+      config.max_fps = 120
+
+      -- The cursor blink is an *eased* animation by default, which repaints
+      -- at animation_fps forever, on the same thread that handles input.
+      -- Constant easing makes it a plain on/off toggle at cursor_blink_rate
+      -- and stops the continuous repaint; animation_fps drops with it since
+      -- nothing left here animates smoothly.
+      config.animation_fps = 1
+      config.cursor_blink_ease_in = 'Constant'
+      config.cursor_blink_ease_out = 'Constant'
+
+      -- A deliberate delay the mux server sleeps after reading pty output,
+      -- to coalesce fragmented writes into one push. It is a real 3ms on
+      -- every keystroke's echo -- and 6ms for a remote pane, which crosses
+      -- two mux servers. These are all LAN links (sub-millisecond RTT), so
+      -- there is no fragmentation worth buying at that price. Raise it again
+      -- if output ever starts tearing.
+      config.mux_output_parser_coalesce_delay_ms = 0
+
+      -- A server push carries the dirty lines inside the viewport inline;
+      -- anything else dirty (scrollback above it, so: scrolling, and large
+      -- TUI redraws) needs a separate fetch, and the client rate-limits
+      -- those to 50/s by default. That cap is sized for a slow link, not a
+      -- unix socket or a LAN.
+      config.ratelimit_mux_line_prefetches_per_second = 200
+
       -- fcitx5 pinyin comes from base/input-method.nix; without IME support
       -- the candidate window never appears.
       config.use_ime = true
