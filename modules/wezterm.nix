@@ -276,11 +276,12 @@ in
       end
 
       -- Last-workspace toggle, tmux's prefix+L (switch-client -l). wezterm
-      -- fires no workspace-change event, and the launcher behind LEADER s
-      -- cannot be wrapped, so the change is noticed in update-status instead of
-      -- at each switch site -- which catches every route into a workspace,
-      -- the launcher's included. The cost is the status interval: two switches
-      -- inside one second collapse, and the middle one is never recorded.
+      -- fires no workspace-change event, so the change is noticed in
+      -- update-status instead of at each switch site -- which catches every
+      -- route into a workspace, including the ones outside this file (herd's
+      -- wz_workspace_cwd, a bare SwitchToWorkspace). The cost is the status
+      -- interval: two switches inside one second collapse, and the middle one
+      -- is never recorded.
       local workspace_now, workspace_prev = {}, {}
       local function note_workspace(window)
         local id, ws = window:window_id(), window:active_workspace()
@@ -288,6 +289,66 @@ in
           workspace_prev[id] = workspace_now[id]
           workspace_now[id] = ws
         end
+      end
+
+      -- The workspace list behind LEADER s, rebuilt by hand because the
+      -- built-in FUZZY|WORKSPACES launcher renders bare names and takes no
+      -- formatting. A name alone stopped being enough once a session could
+      -- live on another machine's mux: `music-mgmt` does not say whether it is
+      -- here or on dance, and those are different sessions doing different
+      -- work. So each row carries the domains its panes are actually on.
+      --
+      -- Domains are read off the panes rather than stored when the workspace is
+      -- made, because a workspace is not pinned to one domain -- a tab spawned
+      -- into another host joins it, and then both names show. That is the
+      -- honest answer; picking one to display would hide the split.
+      local function workspace_picker()
+        return wezterm.action_callback(function(window, pane)
+          local domains, choices = {}, {}
+          for _, w in ipairs(wezterm.mux.all_windows()) do
+            local ws = w:get_workspace()
+            local seen = domains[ws]
+            if not seen then
+              seen = { names = {} }
+              domains[ws] = seen
+            end
+            for _, t in ipairs(w:tabs()) do
+              for _, p in ipairs(t:panes()) do
+                local d = p:get_domain_name()
+                if d and not seen[d] then
+                  seen[d] = true
+                  table.insert(seen.names, d)
+                end
+              end
+            end
+          end
+
+          -- get_workspace_names is the authority on what exists (it is what
+          -- switch_to_path checks), and it is already sorted.
+          for _, ws in ipairs(wezterm.mux.get_workspace_names()) do
+            local seen = domains[ws]
+            local where = seen and table.concat(seen.names, ', ') or ""
+            table.insert(choices, {
+              id = ws,
+              label = ws .. (where ~= "" and '  [' .. where .. ']' or ""),
+            })
+          end
+
+          window:perform_action(
+            wezterm.action.InputSelector {
+              title = 'Workspaces',
+              fuzzy = true,
+              choices = choices,
+              action = wezterm.action_callback(function(win, inner_pane, id)
+                -- id is nil when the selector is cancelled.
+                if id then
+                  win:perform_action(wezterm.action.SwitchToWorkspace { name = id }, inner_pane)
+                end
+              end),
+            },
+            pane
+          )
+        end)
       end
 
       -- Every machine runs a wezterm mux server, and every machine's config
@@ -448,8 +509,9 @@ in
         { key = 'n', mods = 'LEADER', action = wezterm.action.ActivateTabRelative(1) },
         { key = 'p', mods = 'LEADER', action = wezterm.action.ActivateTabRelative(-1) },
         { key = 'w', mods = 'LEADER', action = wezterm.action.ShowTabNavigator },
-        -- tmux's `s` is choose-tree over sessions; a workspace is herd's session.
-        { key = 's', mods = 'LEADER', action = wezterm.action.ShowLauncherArgs { flags = 'FUZZY|WORKSPACES' } },
+        -- tmux's `s` is choose-tree over sessions; a workspace is herd's
+        -- session. See workspace_picker for why this is not the built-in one.
+        { key = 's', mods = 'LEADER', action = workspace_picker() },
         -- ...and `S` is the one tmux never had a binding for: make a session.
         -- tmux filled that from the shell (tmac, tmux-session in zsh.nix) and
         -- nothing filled it here, so LEADER s could only ever reach a workspace
