@@ -154,6 +154,33 @@
       _tmux-session() { _path_files -/ -W ~ }
       compdef _tmux-session tmux-session
 
+      # `wzs [path]` is tmux-session for wezterm workspaces, and tmux-session
+      # stays put beside it -- it still serves a passthrough window driving a
+      # remote tmux.
+      #
+      # It sends the path and nothing else. Deriving the workspace name is
+      # wezterm's Lua's job (workspace_name_for in modules/wezterm.nix), so the
+      # rules -- $HOME is `home`, dots become underscores -- exist once.
+      # modules/tmux.nix and modules/wezterm.nix already carry one pair of
+      # hand-maintained parallel definitions between them; this would have made
+      # a second, and one that fails quietly by opening a second workspace for
+      # a directory that already had one.
+      #
+      # Guarded on WEZTERM_PANE like the herd_pane stamp above: elsewhere the
+      # escape sequence would simply print.
+      wzs() {
+        if [[ -z "$WEZTERM_PANE" ]]; then
+          print -u2 "wzs: not a wezterm pane"
+          return 1
+        fi
+        local target=''${1:-$PWD}
+        [[ $target == /* ]] || target=$HOME/$target
+        printf '\e]1337;SetUserVar=wz_workspace_cwd=%s\a' \
+          "$(printf '%s' "$target" | base64 -w0)"
+      }
+      _wzs() { _path_files -/ -W ~ }
+      compdef _wzs wzs
+
       # Load per-directory zsh completions exposed via direnv (bin/_*), e.g.
       # music-mgmt/bin/_m completes music-mgmt/bin/m. Autoloading by bare
       # name (via fpath) rather than by path avoids zsh treating the file

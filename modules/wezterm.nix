@@ -190,16 +190,104 @@ in
       -- stdout, and both read WEZTERM_PANE. wezterm has no popup, so they run in
       -- a transient split -- each exits on its own (monitor because of
       -- --jump-exits) and a wezterm pane dies with its program, so the split
-      -- cleans itself up. Unlike tmux there is no "focus the monitor already on
-      -- screen instead" guard: that needs a per-pane foreground-command query
-      -- wezterm's Lua does not offer, so a second prefix+f gives a second
-      -- monitor pane. Acceptable; the pane is disposable.
+      -- cleans itself up.
       local function herd_split(percent, args)
         return wezterm.action.SplitPane {
           direction = 'Right',
           size = { Percent = percent },
           command = { args = args },
         }
+      end
+
+      -- tmux's prefix+f guard (tmux-monitor-focus in tmux.nix), in Lua: if this
+      -- tab already shows a herd monitor, go to it rather than splitting a
+      -- second one. `agent-session` is herd's former name, matched until old
+      -- panes cycle out -- tmux-monitor-focus matches both for that reason too.
+      --
+      -- get_foreground_process_name returns a path, and returns nil for a pane
+      -- on another host: the mux does not proxy process names. So a monitor
+      -- running on a remote tab is not seen and splits again. tmux's version
+      -- fails the same way across an ssh boundary, and the pane is disposable.
+      local function herd_monitor_focus(window)
+        for _, p in ipairs(window:active_tab():panes()) do
+          local proc = p:get_foreground_process_name()
+          local base = proc and proc:match('([^/]+)$')
+          if base == 'herd' or base == 'agent-session' then
+            p:activate()
+            return true
+          end
+        end
+        return false
+      end
+
+      -- Workspace naming, mirroring tmux-session in modules/zsh.nix: $HOME is
+      -- `home`, anything under it is the home-relative path, anything else the
+      -- absolute path. Dots become underscores -- a tmux constraint (it reads
+      -- `.` as a target separator) that wezterm does not share, kept anyway so
+      -- one directory yields one name under both and herd sees a session
+      -- started either way as the same session.
+      local function workspace_name_for(path)
+        local home = wezterm.home_dir
+        local name
+        if path == home then
+          name = 'home'
+        elseif path:sub(1, #home + 1) == home .. '/' then
+          name = path:sub(#home + 2)
+        else
+          name = path
+        end
+        return (name:gsub('%.', '_'))
+      end
+
+      -- Empty input means "here", and a bare word is home-relative -- both the
+      -- way `tmux-session` reads its argument.
+      local function resolve_path(pane, line)
+        if line == nil then return nil end
+        if line == "" then
+          local cwd = pane:get_current_working_dir()
+          return cwd and cwd.file_path or wezterm.home_dir
+        elseif line:sub(1, 1) == '~' then
+          return wezterm.home_dir .. line:sub(2)
+        elseif line:sub(1, 1) ~= '/' then
+          return wezterm.home_dir .. '/' .. line
+        end
+        return line
+      end
+
+      -- tmux-session's create-or-attach: `tmux new -A -s`. SwitchToWorkspace
+      -- alone would do it -- it creates what is missing -- but its `spawn`
+      -- hands back no reference to the window it made, and the agent variant
+      -- needs one to add a second tab to. tmux-session -a made two windows,
+      -- `script` and `agent`; a tmux window is a wezterm tab.
+      local function switch_to_path(window, pane, path, agent)
+        if path == nil then return end
+        local name = workspace_name_for(path)
+        local exists = false
+        for _, w in ipairs(wezterm.mux.get_workspace_names()) do
+          if w == name then exists = true end
+        end
+        if not exists then
+          local _, _, mux_win = wezterm.mux.spawn_window { workspace = name, cwd = path }
+          if agent then
+            mux_win:spawn_tab { cwd = path, args = { 'herd', 'layout' } }
+          end
+        end
+        window:perform_action(wezterm.action.SwitchToWorkspace { name = name }, pane)
+      end
+
+      -- Last-workspace toggle, tmux's prefix+L (switch-client -l). wezterm
+      -- fires no workspace-change event, and the launcher behind LEADER s
+      -- cannot be wrapped, so the change is noticed in update-status instead of
+      -- at each switch site -- which catches every route into a workspace,
+      -- the launcher's included. The cost is the status interval: two switches
+      -- inside one second collapse, and the middle one is never recorded.
+      local workspace_now, workspace_prev = {}, {}
+      local function note_workspace(window)
+        local id, ws = window:window_id(), window:active_workspace()
+        if workspace_now[id] ~= ws then
+          workspace_prev[id] = workspace_now[id]
+          workspace_now[id] = ws
+        end
       end
 
       -- Every machine runs a wezterm mux server, and every machine's config
@@ -362,6 +450,43 @@ in
         { key = 'w', mods = 'LEADER', action = wezterm.action.ShowTabNavigator },
         -- tmux's `s` is choose-tree over sessions; a workspace is herd's session.
         { key = 's', mods = 'LEADER', action = wezterm.action.ShowLauncherArgs { flags = 'FUZZY|WORKSPACES' } },
+        -- ...and `S` is the one tmux never had a binding for: make a session.
+        -- tmux filled that from the shell (tmac, tmux-session in zsh.nix) and
+        -- nothing filled it here, so LEADER s could only ever reach a workspace
+        -- herd had already created. `A` is tmux-session -a: same workspace,
+        -- plus herd's agent tab.
+        {
+          key = 'S',
+          mods = 'LEADER',
+          action = wezterm.action.PromptInputLine {
+            description = 'workspace path',
+            action = wezterm.action_callback(function(window, pane, line)
+              switch_to_path(window, pane, resolve_path(pane, line), false)
+            end),
+          },
+        },
+        {
+          key = 'A',
+          mods = 'LEADER',
+          action = wezterm.action.PromptInputLine {
+            description = 'workspace path (with agent)',
+            action = wezterm.action_callback(function(window, pane, line)
+              switch_to_path(window, pane, resolve_path(pane, line), true)
+            end),
+          },
+        },
+        -- tmux's prefix+L, switch-client -l. Nothing to do on the first switch
+        -- of a window's life, when there is no previous workspace yet.
+        {
+          key = 'L',
+          mods = 'LEADER',
+          action = wezterm.action_callback(function(window, pane)
+            local prev = workspace_prev[window:window_id()]
+            if prev then
+              window:perform_action(wezterm.action.SwitchToWorkspace { name = prev }, pane)
+            end
+          end),
+        },
         { key = '&', mods = 'LEADER', action = wezterm.action.CloseCurrentTab { confirm = true } },
         { key = 'z', mods = 'LEADER', action = wezterm.action.TogglePaneZoomState },
         { key = 'q', mods = 'LEADER', action = wezterm.action.PaneSelect },
@@ -454,7 +579,15 @@ in
         { key = 'r', mods = 'LEADER|ALT', action = wezterm.action.RotatePanes 'Clockwise' },
 
         -- herd. prefix+f is the dashboard, prefix+j the no-UI jump.
-        { key = 'f', mods = 'LEADER', action = herd_split(60, { 'herd', 'monitor', '--jump-exits' }) },
+        {
+          key = 'f',
+          mods = 'LEADER',
+          action = wezterm.action_callback(function(window, pane)
+            if not herd_monitor_focus(window) then
+              window:perform_action(herd_split(60, { 'herd', 'monitor', '--jump-exits' }), pane)
+            end
+          end),
+        },
         { key = 'j', mods = 'LEADER', action = herd_split(40, { 'herd', 'jump' }) },
         -- prefix+R snaps a herd workspace back to 70/30 after a resize skewed
         -- it. It cannot run in a split like the other two: an extra pane is
@@ -547,14 +680,50 @@ in
         -- An explicit LEADER+, rename wins outright: set_title is the signal
         -- that the user wants this tab called something, and overwriting it
         -- with a hostname would make the rename look broken.
+        local name
         if tab.tab_title and tab.tab_title ~= "" then
-          return ' ' .. tab.tab_title .. ' '
+          name = tab.tab_title
+        else
+          local host = (tab.active_pane.title or ""):match('^%s*([%w._-]+)%s*$')
+          if host then
+            host_by_tab[tab.tab_id] = host
+          end
+          name = host_by_tab[tab.tab_id] or wezterm.hostname():match('^[^.]+')
         end
-        local host = (tab.active_pane.title or ""):match('^%s*([%w._-]+)%s*$')
-        if host then
-          host_by_tab[tab.tab_id] = host
+
+        -- tmux's window list, in tmux's order: index, name, flags. A hostname
+        -- alone could not tell two tabs on the same machine apart, and left
+        -- LEADER+digit undiscoverable. tab_index + 1 so the digit shown is the
+        -- digit that selects it, matching baseIndex = 1 in tmux.nix.
+        --
+        -- Z is tmux's zoom flag. The dot is monitor-activity, and only means
+        -- anything on a tab that is not on screen -- the active tab's output is
+        -- seen by definition, and wezterm keeps reporting it unseen for a beat
+        -- after a switch, which would leave a dot on the tab you are reading.
+        local label = ' ' .. tostring(tab.tab_index + 1) .. ' ' .. name
+        if tab.active_pane.is_zoomed then
+          label = label .. ' Z'
         end
-        return ' ' .. (host_by_tab[tab.tab_id] or wezterm.hostname():match('^[^.]+')) .. ' '
+        if not tab.is_active and tab.active_pane.has_unseen_output then
+          label = label .. ' ●'
+        end
+        label = label .. ' '
+
+        -- use_fancy_tab_bar is off, so formatting the label here is the whole
+        -- of a tab's appearance; there is no colors.tab_bar to keep in step
+        -- with it. Bold-and-blue for the active tab is the same emphasis
+        -- tmux's default window-status-current-style gives.
+        if tab.is_active then
+          return {
+            { Attribute = { Intensity = 'Bold' } },
+            { Foreground = { AnsiColor = 'Blue' } },
+            { Text = label },
+          }
+        end
+        return {
+          { Foreground = { AnsiColor = 'Silver' } },
+          { Text = label },
+        }
       end)
 
       -- Go to the pane that stamped itself `herd_pane=<host>:<tty>`.
@@ -608,6 +777,13 @@ in
           window:perform_action(wezterm.action.SwitchToWorkspace { name = value }, pane)
         elseif name == 'herd_focus' then
           herd_focus(window, pane, value)
+        elseif name == 'wz_workspace_cwd' then
+          -- `wzs` from a shell (modules/zsh.nix). It sends a path and nothing
+          -- else; the name comes from workspace_name_for here, so the naming
+          -- rules live in one place. Deliberately not carried on herd's
+          -- herd_workspace var: that one is herd's contract and switches
+          -- without a cwd, so reusing it would silently drop the directory.
+          switch_to_path(window, pane, value, false)
         end
       end)
 
@@ -616,7 +792,30 @@ in
       -- acpi is in no feature's home.packages, so that segment has always
       -- rendered empty -- wezterm.battery_info() is the replacement if this rig
       -- ever runs on a laptop.
-      wezterm.on('update-right-status', function(window)
+      --
+      -- The left half is not tmux's status-left. That was the pane title, which
+      -- the tab bar now carries; the slot is better spent on the two things
+      -- tmux never had to show. Whether the prefix is armed: wezterm re-fires
+      -- update-status on leader press, and 2000ms is long enough to forget you
+      -- opened the window. And which machine the active pane is on, when that
+      -- is not this one -- true the moment a tab is spawned on a domain,
+      -- whereas the tab's own hostname label waits on the remote shell's first
+      -- prompt to set a title.
+      wezterm.on('update-status', function(window, pane)
+        note_workspace(window)
+
+        local left = {}
+        if window:leader_is_active() then
+          table.insert(left, { Foreground = { AnsiColor = 'Yellow' } })
+          table.insert(left, { Text = ' ^A ' })
+        end
+        local domain = pane and pane:get_domain_name()
+        if domain and domain ~= this_host then
+          table.insert(left, { Foreground = { AnsiColor = 'Teal' } })
+          table.insert(left, { Text = ' ' .. domain .. ' ' })
+        end
+        window:set_left_status(wezterm.format(left))
+
         local now = wezterm.time.now()
         window:set_right_status(wezterm.format {
           -- A passthrough window looks identical otherwise, and "why did my
