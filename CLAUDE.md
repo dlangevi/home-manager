@@ -117,3 +117,6 @@ gamescope, firewall integration.
    if the package is user-scoped; remove the NixOS entry to avoid the
    duplicate.
 5. **Is it an unfree package?** The flake sets `nixpkgs.config.allowUnfree = true` globally in `flake.nix`; unfree packages install without additional configuration. Make sure the license aligns with your intent — there's no scope-limit gate.
+
+## 5. Making changes
+Often agents will need to make changes inside of home-manager when doing work on other projects. When they do, they should commit their work without asking, and just notify the user that a commit was made. We want to prevent multiple in progress changes stacking outside of a commit like we have been experiancing
