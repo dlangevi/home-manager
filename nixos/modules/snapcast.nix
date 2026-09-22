@@ -79,9 +79,11 @@ let
 
   mpdPort = 6600;       # MPD control protocol, for ncmpcpp/mpc on any machine
   # Second MPD output, alongside the fifo->snapcast leg: a plain HTTP audio
-  # stream a browser <audio> element can hit directly. Bound to loopback only
-  # -- radio.jpc.dlangevi.com (media-audio.nix) reverse-proxies it, nothing
-  # needs a direct firewall hole for this port.
+  # stream a browser <audio> element can hit directly. Bound to loopback only.
+  # Was reverse-proxied at jpc.dlangevi.com/radio by media-audio.nix; that
+  # route was dropped when jpc-landing/radio got consolidated into the
+  # media-services frontend checkout and needs re-wiring if the radio page
+  # comes back.
   mpdHttpdPort = 8020;
 
   snapPort = 1704;      # snapclient connections
@@ -202,7 +204,8 @@ in
           mixer_type = "software";
         }
         {
-          # For radio.jpc.dlangevi.com: an independent MPD output, decoded
+          # For the (currently unrouted, see mpdHttpdPort above) radio page:
+          # an independent MPD output, decoded
           # and encoded on demand for whatever HTTP clients connect, separate
           # from the fifo leg above (MPD supports multiple simultaneous
           # outputs; this one has nothing to do with snapcast's shared clock).
