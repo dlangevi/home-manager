@@ -54,7 +54,7 @@ let
   # Requester-submitted albums (music-mgmt's ingestion queue), kept separate
   # from both the household library and jpc-music. Same shape as jpc-music:
   # a plain directory directly under the world-traversable /srv/media, owned
-  # by dance so the ingest service (music-mgmt-ingest.nix) can write to it
+  # by dance so the ingest service (album-requests.nix) can write to it
   # directly, then bound read-only into navidrome's chroot below. Must also
   # be added as a second Library from Navidrome's own UI after a rebuild --
   # BindReadOnlyPaths only makes the path visible to the process, it does
@@ -106,8 +106,12 @@ let
   # music-mgmt's ingestion queue: search MusicBrainz, submit an artist+album
   # request, drive slskd on suspense to acquire it, tag/art/publish into
   # /srv/media/collective-import. Runs as a plain systemd service (see
-  # music-mgmt-ingest.nix) rather than one of navidrome/jellyfin's own ports.
-  requestSubdomain = "request.${jpcDomain}";
+  # album-requests.nix) rather than one of navidrome/jellyfin's own ports.
+  #
+  # Unlike tunes/flix, this isn't an SPA that assumes it owns the origin --
+  # it's our own small app, so it's a path on jpcDomain (/request) rather
+  # than its own subdomain. One fewer DNS override to maintain, one fewer
+  # name for a guest to have to be told about.
   ingestPort = 8100;
 
   # Browser radio player for whatever MPD is currently playing. Proxies
@@ -115,7 +119,9 @@ let
   # mpdHttpdPort = 8020) -- kept as a literal here since these per-module
   # `let` blocks aren't shared; if that port ever changes it must change in
   # both files.
-  radioSubdomain = "radio.${jpcDomain}";
+  #
+  # Same reasoning as /request above: our own static page, so a path
+  # (/radio) rather than a subdomain.
   mpdHttpdPort = 8020;
 
   # myMPD (mympd.nix) gets one too, so the web remote for the shared MPD queue
@@ -357,6 +363,40 @@ in
         root = landingDir;
         index = "index.html";
       };
+
+      # request.jpc.dlangevi.com and radio.jpc.dlangevi.com folded into paths
+      # here -- see the comments on ingestPort/mpdHttpdPort above. Bare
+      # /request and /radio (no trailing slash) redirect first: without that,
+      # a request for the bare path never matches the trailing-slash location
+      # below, so relative links/assets on the served page would resolve one
+      # level too high.
+      locations."/request" = {
+        return = "301 /request/";
+      };
+      locations."/request/" = {
+        # Trailing slash on both sides of proxyPass strips the /request/
+        # prefix before forwarding, so the backend still sees plain /api/...
+        # and /admin -- matches ingest/app.py's own routes unmodified.
+        proxyPass = "http://127.0.0.1:${toString ingestPort}/";
+      };
+
+      locations."/radio" = {
+        return = "301 /radio/";
+      };
+      # alias (not root): root would look for /srv/www/radio/radio/index.html
+      # -- alias replaces the matched location prefix with this path instead
+      # of appending it.
+      locations."/radio/" = {
+        alias = "/srv/www/radio/";
+        index = "index.html";
+      };
+      # MPD's httpd output speaks plain chunked HTTP audio, not a websocket
+      # or anything else nginx needs help with -- a bare proxyPass is enough.
+      # Longest-prefix-match means this wins over /radio/ above regardless of
+      # declaration order.
+      locations."/radio/stream" = {
+        proxyPass = "http://127.0.0.1:${toString mpdHttpdPort}/";
+      };
     };
 
     virtualHosts.${tunesSubdomain} = {
@@ -374,29 +414,6 @@ in
       locations."/" = {
         proxyPass = "http://127.0.0.1:${toString jellyfinPort}";
         proxyWebsockets = true;
-      };
-    };
-
-    virtualHosts.${requestSubdomain} = {
-      useACMEHost = jpcDomain;
-      forceSSL = true;
-      locations."/" = {
-        proxyPass = "http://127.0.0.1:${toString ingestPort}";
-      };
-    };
-
-    virtualHosts.${radioSubdomain} = {
-      useACMEHost = jpcDomain;
-      forceSSL = true;
-      # Static player page, separate from the stream itself.
-      locations."/" = {
-        root = "/srv/www/radio";
-        index = "index.html";
-      };
-      # MPD's httpd output speaks plain chunked HTTP audio, not a websocket
-      # or anything else nginx needs help with -- a bare proxyPass is enough.
-      locations."/stream" = {
-        proxyPass = "http://127.0.0.1:${toString mpdHttpdPort}/";
       };
     };
 

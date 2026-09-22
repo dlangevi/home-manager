@@ -16,7 +16,7 @@
 
 let
   # slskd's own web API/UI port. Only the ingestion service (same host, see
-  # music-mgmt-ingest.nix) needs to reach it, so it's bound to loopback only
+  # album-requests.nix) needs to reach it, so it's bound to loopback only
   # -- no firewall rule required.
   webPort = 5030;
 
