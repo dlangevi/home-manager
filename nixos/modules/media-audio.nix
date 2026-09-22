@@ -72,7 +72,14 @@ let
   # "/" currently serves the tree's own index.html, which just redirects
   # to /media; jpc-landing/ and radio/ aren't wired into any nginx location
   # yet.
-  landingDir = "/home/dance/auto/media-services/frontend";
+  #
+  # nginx reads it through a bind mount rather than the real path directly --
+  # same reasoning as storeDir/musicDir above: /home/dance is 0700 and nginx
+  # (uid 60, group nginx) shares none of dance's groups, so it can't
+  # traverse into /home/dance to reach the real checkout. The bind sidesteps
+  # that since permission checks apply to the new path's own components.
+  frontendRepoDir = "/home/dance/auto/media-services/frontend";
+  landingDir = "/srv/www/media-services";
 
   lanSubnet = "10.0.70.0/24";
   teleportSubnet = "192.168.2.0/24"; 
@@ -145,6 +152,7 @@ in
     "d ${collectiveImportDir} 0755 dance users -"
     "d ${jpcMoviesDir} 0755 dance users -"
     "d ${jpcShowsDir} 0755 dance users -"
+    "d ${landingDir} 0755 dance users -"
   ];
 
   # Read-only: navidrome never writes to the library, and transfers target
@@ -172,6 +180,16 @@ in
     fsType = "none";
     options = [ "bind" "ro" ];
     depends = [ videoStorage ];
+  };
+
+  # Read-only, same reasoning as musicDir above: nginx can't traverse
+  # /home/dance to reach frontendRepoDir directly. Not read-write even
+  # though the checkout is meant to be edited in place -- edits happen as
+  # dance on the real path, this bind is purely for nginx's read access.
+  fileSystems.${landingDir} = {
+    device = frontendRepoDir;
+    fsType = "none";
+    options = [ "bind" "ro" ];
   };
 
   # A "Neighbours" entry in Navidrome's sidebar: pick a neighbour, get their
