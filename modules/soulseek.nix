@@ -9,8 +9,9 @@
 # hardware, no root. The one system-layer piece is the listening port: without
 # it Nicotine+ runs in "closed" mode, where downloads still work but no peer can
 # connect to you directly and your queue positions suffer. TCP 2234 is opened in
-# nixos/hosts/suspense.nix; set the same port under Preferences -> Network, as
-# Nicotine+ writes its own config at runtime and so is not managed from here.
+# both nixos/hosts/suspense.nix and nixos/hosts/console.nix; set the same port
+# under Preferences -> Network on each machine, as Nicotine+ writes its own
+# config at runtime and so is not managed from here.
 { pkgs, ... }:
 
 {

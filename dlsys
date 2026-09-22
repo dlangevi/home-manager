@@ -24,7 +24,7 @@ usage() {
   cat <<'EOF'
 Usage:
   dlsys init                       Register this machine (interactive)
-  dlsys upgrade [target] [--update]
+  dlsys upgrade [target] [--update] [--pull]
       target = auto   (default) build both layers, switch only the ones
                       whose store path differs from what is live
              = hm     home-manager switch only                (alias: hms)
@@ -39,6 +39,10 @@ Usage:
       --update also refreshes flake inputs first (excludes nixpkgs-ollama,
                 which is pinned to avoid the CUDA rebuild; bump manually with
                 'nix flake lock --update-input nixpkgs-ollama')
+      --pull    'git pull --ff-only' this checkout first, before building or
+                switching anything. Fails if the tree is dirty or the pull
+                isn't a fast-forward -- resolve by hand rather than deploying
+                a merge you haven't seen.
 
   dlsys rollout [--order h1,h2,...] [--update]
       Run 'upgrade auto' on every managed machine, one at a time, against
@@ -238,11 +242,13 @@ detect_targets() {
 
 do_upgrade() {
   local do_update=0
+  local do_pull=0
   local target="auto"
   local arg
   for arg in "$@"; do
     case "$arg" in
       --update) do_update=1 ;;
+      --pull) do_pull=1 ;;
       hm|nixos|all|auto) target="$arg" ;;
       *)
         usage >&2
@@ -252,6 +258,15 @@ do_upgrade() {
   done
   require_nix
   require_flake_root
+  if [[ $do_pull -eq 1 ]]; then
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+      echo "Working tree has uncommitted changes. Commit or stash them first --" >&2
+      echo "--pull refuses to pull on top of local changes." >&2
+      exit 1
+    fi
+    echo "==> git pull --ff-only"
+    git pull --ff-only
+  fi
   local host
   host=$(get_hostname)
   if ! machine_registered "$host"; then

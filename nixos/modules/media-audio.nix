@@ -51,6 +51,15 @@ let
   # snapcast.nix links jpcMusicDir into MPD's music root as well, so this path
   # has a second consumer -- moving it means fixing that module too.
   jpcMusicDir = "/srv/media/jpc-music";
+  # Requester-submitted albums (music-mgmt's ingestion queue), kept separate
+  # from both the household library and jpc-music. Same shape as jpc-music:
+  # a plain directory directly under the world-traversable /srv/media, owned
+  # by dance so the ingest service (music-mgmt-ingest.nix) can write to it
+  # directly, then bound read-only into navidrome's chroot below. Must also
+  # be added as a second Library from Navidrome's own UI after a rebuild --
+  # BindReadOnlyPaths only makes the path visible to the process, it does
+  # not register it (see the comment on the existing BindReadOnlyPaths list).
+  collectiveImportDir = "/srv/media/collective-import";
   jpcMoviesDir = "/srv/media/jpc-movies";
   jpcShowsDir = "/srv/media/jpc-shows";
 
@@ -93,6 +102,32 @@ let
   # a subpath. A wildcard on the existing DNS-01 cert covers both for free.
   tunesSubdomain = "tunes.${jpcDomain}";
   flixSubdomain = "flix.${jpcDomain}";
+
+  # music-mgmt's ingestion queue: search MusicBrainz, submit an artist+album
+  # request, drive slskd on suspense to acquire it, tag/art/publish into
+  # /srv/media/collective-import. Runs as a plain systemd service (see
+  # music-mgmt-ingest.nix) rather than one of navidrome/jellyfin's own ports.
+  requestSubdomain = "request.${jpcDomain}";
+  ingestPort = 8100;
+
+  # Browser radio player for whatever MPD is currently playing. Proxies
+  # straight to MPD's second `httpd` audio_output (snapcast.nix's
+  # mpdHttpdPort = 8020) -- kept as a literal here since these per-module
+  # `let` blocks aren't shared; if that port ever changes it must change in
+  # both files.
+  radioSubdomain = "radio.${jpcDomain}";
+  mpdHttpdPort = 8020;
+
+  # myMPD (mympd.nix) gets one too, so the web remote for the shared MPD queue
+  # is reachable by name rather than by port. Unlike the two above this one is
+  # personal rather than guest-facing -- it is on the same vhost list only
+  # because nginx and the domain live here.
+  #
+  # Each name needs its own A record override on the UDM Pro: the local
+  # override is per-name, not a wildcard, so a new subdomain resolves nowhere
+  # until that entry exists even though nginx and the cert are both ready for
+  # it. The wildcard on the ACME cert below covers it without changes.
+  mpdSubdomain = "mpd.${jpcDomain}";
 in
 {
   # 0755 because navidrome's user shares no group with dance, so world-read is
@@ -106,6 +141,8 @@ in
     "d ${moviesStoreDir} 0755 dance users -"
     "d ${showsStoreDir} 0755 dance users -"
     "d ${jpcMusicDir} 0755 dance users -"
+    "d ${collectiveImportDir} 0755 dance users -"
+    "d /srv/www/radio 0755 dance users -"
     "d ${jpcMoviesDir} 0755 dance users -"
     "d ${jpcShowsDir} 0755 dance users -"
     "d /srv/www 0755 root root -"
@@ -232,6 +269,7 @@ in
   # Add each additional library's path here as it's introduced.
   systemd.services.navidrome.serviceConfig.BindReadOnlyPaths = [
     jpcMusicDir
+    collectiveImportDir
   ];
 
   # VAAPI hardware transcoding on the Radeon 780M iGPU.
@@ -311,7 +349,10 @@ in
     # still only gets http://.
     virtualHosts.${jpcDomain} = {
       useACMEHost = jpcDomain;
-      onlySSL = true;
+      # forceSSL rather than onlySSL: without a port-80 server block for these
+      # names, a plain http:// request falls through to the default `dance`
+      # vhost and silently serves the landing page instead of the app.
+      forceSSL = true;
       locations."/" = {
         root = landingDir;
         index = "index.html";
@@ -320,7 +361,7 @@ in
 
     virtualHosts.${tunesSubdomain} = {
       useACMEHost = jpcDomain;
-      onlySSL = true;
+      forceSSL = true;
       locations."/" = {
         proxyPass = "http://127.0.0.1:${toString navidromePort}";
         proxyWebsockets = true;
@@ -329,9 +370,49 @@ in
 
     virtualHosts.${flixSubdomain} = {
       useACMEHost = jpcDomain;
-      onlySSL = true;
+      forceSSL = true;
       locations."/" = {
         proxyPass = "http://127.0.0.1:${toString jellyfinPort}";
+        proxyWebsockets = true;
+      };
+    };
+
+    virtualHosts.${requestSubdomain} = {
+      useACMEHost = jpcDomain;
+      forceSSL = true;
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:${toString ingestPort}";
+      };
+    };
+
+    virtualHosts.${radioSubdomain} = {
+      useACMEHost = jpcDomain;
+      forceSSL = true;
+      # Static player page, separate from the stream itself.
+      locations."/" = {
+        root = "/srv/www/radio";
+        index = "index.html";
+      };
+      # MPD's httpd output speaks plain chunked HTTP audio, not a websocket
+      # or anything else nginx needs help with -- a bare proxyPass is enough.
+      locations."/stream" = {
+        proxyPass = "http://127.0.0.1:${toString mpdHttpdPort}/";
+      };
+    };
+
+    # Port read from the mympd module rather than repeated, the same way
+    # snapcast.nix reads navidrome's MusicFolder -- both modules land on this
+    # host together, and a proxy pointed at the wrong port fails in a way
+    # that looks like the app being down.
+    #
+    # proxyWebsockets is load-bearing here in a way it is not for the two
+    # above: myMPD pushes every queue and play-state change over a websocket,
+    # so without it the UI loads and then never updates.
+    virtualHosts.${mpdSubdomain} = {
+      useACMEHost = jpcDomain;
+      forceSSL = true;
+      locations."/" = {
+        proxyPass = "http://127.0.0.1:${toString config.services.mympd.settings.http_port}";
         proxyWebsockets = true;
       };
     };

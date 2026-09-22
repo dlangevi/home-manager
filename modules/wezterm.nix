@@ -1,9 +1,35 @@
 { pkgs, ... }:
 
+let
+  # Launches wezterm in passthrough mode -- see the long comment in the Lua
+  # below. The env var is the whole mechanism; this exists so the desktop entry
+  # has something to point Exec= at (a .desktop file cannot set environment
+  # variables) and so the mode is reachable from a shell by name.
+  weztermPassthrough = pkgs.writeShellScriptBin "wezterm-passthrough" ''
+    export WEZTERM_PASSTHROUGH=1
+    # --always-new-process: without it wezterm hands the request to an already
+    # running GUI, which was started without the variable and would open an
+    # ordinary window instead.
+    exec ${pkgs.wezterm}/bin/wezterm start --always-new-process "$@"
+  '';
+
+in
 {
   # Ship the font with the terminal so base works on non-NixOS hosts too.
-  home.packages = with pkgs; [ nerd-fonts.agave ];
+  home.packages = with pkgs; [ nerd-fonts.agave ] ++ [ weztermPassthrough ];
   fonts.fontconfig.enable = true;
+
+  xdg.desktopEntries.wezterm-passthrough = {
+    name = "WezTerm (passthrough)";
+    genericName = "Terminal";
+    comment = "WezTerm with the tmux keymap disabled, for driving a remote tmux";
+    exec = "${weztermPassthrough}/bin/wezterm-passthrough";
+    icon = "org.wezfurlong.wezterm";
+    terminal = false;
+    type = "Application";
+    categories = [ "System" "TerminalEmulator" ];
+    settings.StartupWMClass = "org.wezfurlong.wezterm";
+  };
 
   # The xdg-terminal-exec spec's answer to "which terminal?". KIO 6.26 still
   # uses kdeglobals TerminalApplication instead (set in plasma.nix), so this is
@@ -17,6 +43,44 @@
       local wezterm = require 'wezterm'
       local config = wezterm.config_builder()
 
+      -- Passthrough profile. Everything below that mirrors tmux -- the C-a
+      -- leader and its whole table, the bare C-arrow and C-hjkl bindings --
+      -- exists because wezterm is the outer multiplexer on this machine. Point
+      -- a window at a *remote* tmux instead and every one of those keys is a
+      -- key the remote server never sees: C-a is swallowed, C-hjkl never
+      -- reaches vim-tmux-navigator, C-arrow changes the wrong window. So a
+      -- passthrough window keeps the look (fonts, colours, links, copy/paste)
+      -- and drops the multiplexing: wezterm becomes a plain terminal and the
+      -- remote tmux gets its prefix back, unprefixed and one key away.
+      --
+      -- Two ways in, because there are two ways such a window gets opened:
+      -- WEZTERM_PASSTHROUGH in the environment (what the desktop launcher and
+      -- the wezterm-passthrough wrapper set), and `wezterm ssh <host>`, which
+      -- is remote by definition. wezterm's Lua exposes no argv, so the second
+      -- is read off /proc -- Linux-only, which every machine this flake targets
+      -- is; a platform without it just falls back to the env var.
+      local function detect_passthrough()
+        if os.getenv('WEZTERM_PASSTHROUGH') then
+          return true
+        end
+        local f = io.open('/proc/self/cmdline', 'rb')
+        if not f then
+          return false
+        end
+        local argv = f:read('*a') or ""
+        f:close()
+        -- NUL-separated. A bare `ssh` argument is either the `wezterm ssh`
+        -- subcommand or `wezterm start -- ssh host`; both are remote.
+        for arg in argv:gmatch('[^\0]+') do
+          if arg == 'ssh' then
+            return true
+          end
+        end
+        return false
+      end
+
+      local passthrough = detect_passthrough()
+
       config.color_scheme = 'Sonokai (Gogh)'
       config.font = wezterm.font_with_fallback {
         'AgaveNerdFont',
@@ -25,12 +89,16 @@
       }
       config.font_size = 11.0
 
-      -- Splits and tabs are both wezterm's now (herd grew a wezterm backend).
-      -- The two multiplexers are never nested: inside wezterm, wezterm
-      -- multiplexes and tmux is not started; every other terminal, and any ssh
-      -- from a host without wezterm, still gets tmux. That is what lets the
-      -- leader below be C-a, the same as tmux's prefix, with no collision to
-      -- design around and no send-prefix escape hatch to write.
+      -- Splits and tabs are both wezterm's now (herd grew a wezterm backend),
+      -- but tmux is not retired and the two do get nested: ssh into a host and
+      -- run tmux there and wezterm is the outer multiplexer, both bound to C-a.
+      -- wezterm wins that, always and unconditionally -- no sniffing at what a
+      -- pane is running to decide who gets the key, because a leader that is
+      -- sometimes the leader is worse than either answer. The cost is paid the
+      -- way tmux itself pays it for tmux-in-tmux: LEADER a forwards one literal
+      -- C-a to the pane, which is `bind-key a send-prefix` in tmux.nix spelled
+      -- for wezterm. So the inner tmux is two keys away rather than one, and
+      -- nothing else about it changes.
       -- A tab is still one host: tab titles carry the hostname (see
       -- format-tab-title), which is what makes a remote tab readable.
       config.enable_tab_bar = true
@@ -84,7 +152,10 @@
         },
       }
       -- C-a, matching tmux's prefix exactly; 2000ms matches tmux's repeat-time.
-      config.leader = { key = 'a', mods = 'CTRL', timeout_milliseconds = 2000 }
+      -- Left unset in passthrough windows, so C-a is just C-a.
+      if not passthrough then
+        config.leader = { key = 'a', mods = 'CTRL', timeout_milliseconds = 2000 }
+      end
 
       -- smart-splits.nvim integration. neovim advertises itself by setting the
       -- IS_NVIM user var (the plugin does this on load, no nvim-side config
@@ -131,6 +202,82 @@
         }
       end
 
+      -- Every machine runs a wezterm mux server, and every machine's config
+      -- names a domain for every machine -- the local one as a unix domain, the
+      -- rest as ssh domains -- so a window here can hold tabs living on any of
+      -- them at once, and those tabs outlive the GUI showing them.
+      --
+      -- One mux per host, not one per domain name: a mux server listens on
+      -- $XDG_RUNTIME_DIR/wezterm/sock whatever its unix domain is called, and a
+      -- client with the same config connects to that same path. So naming the
+      -- domain after its host is purely so the launcher reads as a machine
+      -- list, and a tab opened on dance from here is in the *same* mux that
+      -- dance's own GUI attaches to when someone sits down at it.
+      --
+      -- multiplexing = 'WezTerm' is what makes the remote half of that true:
+      -- wezterm ssh's in, starts `wezterm-mux-server` on the far end (it is on
+      -- PATH there via ~/.nix-profile, since base ships wezterm everywhere) and
+      -- then speaks the mux protocol rather than piping a raw pty. That
+      -- protocol is version-locked between the two ends -- both come from this
+      -- flake's pin, so they agree, but a host upgraded while another is not
+      -- will refuse to connect until `dlsys rollout` catches it up.
+      --
+      -- Connections use wezterm's built-in ssh client, not /usr/bin/ssh: it
+      -- reads ~/.ssh/config and ~/.ssh/id_* and talks to the agent, but an
+      -- exotic ProxyJump or Match block is not guaranteed to be honoured. Keys
+      -- and a flat tailnet name are, which is all these hosts need.
+      --
+      -- console is on the tailnet (100.123.29.32, MagicDNS resolves it); it is
+      -- simply powered off most of the day, which costs nothing here because
+      -- domains are not connected until something asks for one.
+      local ssh_hosts = {
+        { host = 'suspense', user = 'dlangevi', key = 's' },
+        { host = 'dance',    user = 'dance',    key = 'd' },
+        { host = 'console',  user = 'console',  key = 'c' },
+      }
+
+      local this_host = wezterm.hostname():match('^[^.]+')
+
+      -- Declared unconditionally rather than from the table above, so a machine
+      -- not listed there (or not yet added) still gets its own mux instead of
+      -- default_domain naming a domain that does not exist.
+      config.unix_domains = { { name = this_host } }
+
+      config.ssh_domains = {}
+      for _, h in ipairs(ssh_hosts) do
+        if h.host ~= this_host then
+          table.insert(config.ssh_domains, {
+            name = h.host,
+            remote_address = h.host,
+            username = h.user,
+            multiplexing = 'WezTerm',
+            -- Predictive local echo, the mux protocol's answer to typing over a
+            -- link with latency: show the keypress immediately and reconcile
+            -- when the server's version of the line arrives.
+            local_echo_threshold_ms = 10,
+          })
+        end
+      end
+
+      -- Spawn into this host's mux rather than straight into a child process,
+      -- so a pane survives the GUI that opened it -- the wezterm-side answer to
+      -- what tmux detach/attach does, and the reason panes come back after a
+      -- GUI crash or a deliberate close. The mux server is started on demand;
+      -- nothing has to be running first.
+      --
+      -- Not in a passthrough window. That window is a disposable view onto a
+      -- remote tmux, which is doing the persisting itself, and leaving it on
+      -- the plain process domain also keeps one launcher that still opens a
+      -- terminal when the mux is the thing that is broken.
+      --
+      -- No matching `wezterm connect` launcher is needed: with default_domain
+      -- pointing at the mux, a plain `wezterm start` -- which is what both the
+      -- packaged .desktop file and KDE's TerminalApplication run -- adopts the
+      -- windows already in the mux instead of adding another one.
+      if not passthrough then
+        config.default_domain = this_host
+      end
+
       config.keys = {
         { key = 'c', mods = 'CTRL|SHIFT', action = wezterm.action.CopyTo 'Clipboard' },
         { key = 'v', mods = 'CTRL|SHIFT', action = wezterm.action.PasteFrom 'Clipboard' },
@@ -161,6 +308,11 @@
             end),
           },
         },
+      }
+
+      -- Everything from here to the end of tmux_keys is tmux's keymap wearing
+      -- wezterm's clothes, and so is exactly what a passthrough window omits.
+      local tmux_keys = {
         -- Bare C-arrow cycles tabs with no prefix, as in tmux.
         { key = 'UpArrow', mods = 'CTRL', action = wezterm.action.ActivateTabRelative(-1) },
         { key = 'LeftArrow', mods = 'CTRL', action = wezterm.action.ActivateTabRelative(-1) },
@@ -177,13 +329,67 @@
         split_nav('resize', 'k'),
         split_nav('resize', 'l'),
 
-        -- LEADER table: one-for-one with tmux's prefix bindings in tmux.nix, on
-        -- purpose. The two never run nested, so the same keys can mean the same
-        -- things in both and the muscle memory carries across.
+        -- LEADER table: one-for-one with tmux's prefix table, so the same keys
+        -- mean the same things in both and the muscle memory carries across.
+        -- Keep the two in step by hand -- they are parallel definitions of one
+        -- keymap, and tmux.nix says the same there.
+        --
+        -- "tmux's prefix table" means what `tmux list-keys -T prefix` prints,
+        -- not what tmux.nix writes. tmux.nix writes 18 bindings; tmux binds 99.
+        -- The first cut of this table mirrored the file and so silently dropped
+        -- every default -- c, n, p, w, z and the rest -- which are exactly the
+        -- ones fingers reach for without thinking. Port from the running
+        -- keymap, never from the config.
         { key = '-', mods = 'LEADER', action = wezterm.action.SplitPane { direction = 'Down' } },
         { key = '\\', mods = 'LEADER', action = wezterm.action.SplitPane { direction = 'Right' } },
         { key = 'a', mods = 'LEADER|CTRL', action = wezterm.action.ActivateLastTab },
+        -- The send-prefix escape, mirroring tmux.nix's `bind-key a send-prefix`.
+        -- The only way to reach a nested tmux's prefix, since wezterm takes C-a
+        -- unconditionally; without it an inner tmux would be undrivable.
+        { key = 'a', mods = 'LEADER', action = wezterm.action.SendKey { key = 'a', mods = 'CTRL' } },
         { key = 'x', mods = 'LEADER', action = wezterm.action.CloseCurrentPane { confirm = true } },
+
+        -- tmux prefix defaults. Nothing below appears in tmux.nix because tmux
+        -- ships them; they still have to be written out here, because wezterm
+        -- ships a different set.
+        { key = 'c', mods = 'LEADER', action = wezterm.action.SpawnTab 'CurrentPaneDomain' },
+        -- prefix+C is prefix+c aimed somewhere else: pick a domain, get a tab
+        -- there. The fuzzy list covers every host at one binding, and stays
+        -- correct when ssh_hosts grows.
+        { key = 'C', mods = 'LEADER', action = wezterm.action.ShowLauncherArgs { flags = 'FUZZY|DOMAINS' } },
+        { key = 'n', mods = 'LEADER', action = wezterm.action.ActivateTabRelative(1) },
+        { key = 'p', mods = 'LEADER', action = wezterm.action.ActivateTabRelative(-1) },
+        { key = 'w', mods = 'LEADER', action = wezterm.action.ShowTabNavigator },
+        -- tmux's `s` is choose-tree over sessions; a workspace is herd's session.
+        { key = 's', mods = 'LEADER', action = wezterm.action.ShowLauncherArgs { flags = 'FUZZY|WORKSPACES' } },
+        { key = '&', mods = 'LEADER', action = wezterm.action.CloseCurrentTab { confirm = true } },
+        { key = 'z', mods = 'LEADER', action = wezterm.action.TogglePaneZoomState },
+        { key = 'q', mods = 'LEADER', action = wezterm.action.PaneSelect },
+        { key = '[', mods = 'LEADER', action = wezterm.action.ActivateCopyMode },
+        { key = ']', mods = 'LEADER', action = wezterm.action.PasteFrom 'Clipboard' },
+        -- tmux binds break-pane on both Enter and `!`.
+        {
+          key = '!',
+          mods = 'LEADER',
+          action = wezterm.action_callback(function(_, pane)
+            pane:move_to_new_tab()
+          end),
+        },
+        -- rename-window. Setting a title explicitly is what stops
+        -- format-tab-title overwriting it, the same way an explicit
+        -- rename-window switches tmux's automatic-rename off for that window.
+        {
+          key = ',',
+          mods = 'LEADER',
+          action = wezterm.action.PromptInputLine {
+            description = 'Rename tab',
+            action = wezterm.action_callback(function(window, _, line)
+              if line and line ~= "" then
+                window:active_tab():set_title(line)
+              end
+            end),
+          },
+        },
         { key = 'r', mods = 'LEADER', action = wezterm.action.ReloadConfiguration },
         -- tmux's prefix+Enter is break-pane: this pane becomes its own tab.
         {
@@ -237,6 +443,13 @@
         -- all: wezterm has a split tree and no layout engine, so there is
         -- nothing to re-lay out. Those two stay tmux-only, deliberately unbound
         -- here rather than faked with something that does not mean the same.
+        --
+        -- The rest of tmux's prefix table that has no counterpart, listed so the
+        -- next person does not have to rediscover it: `d` (detach-client) --
+        -- wezterm's GUI is the client and there is nothing to detach from;
+        -- `Space` (next-layout) -- no layout engine, as above; `t` (clock-mode);
+        -- `;` (last-pane) -- wezterm tracks no last-used pane, only tree order,
+        -- and `q` is the honest substitute. Unbound on purpose, not forgotten.
         { key = 'o', mods = 'LEADER', action = wezterm.action.PaneSelect { mode = 'SwapWithActive' } },
         { key = 'r', mods = 'LEADER|ALT', action = wezterm.action.RotatePanes 'Clockwise' },
 
@@ -259,6 +472,12 @@
         },
       }
 
+      if not passthrough then
+        for _, key in ipairs(tmux_keys) do
+          table.insert(config.keys, key)
+        end
+      end
+
       -- Bare h/j/k/l inside the resize table; anything else falls out of it.
       config.key_tables = {
         resize = {
@@ -272,14 +491,48 @@
       }
 
       -- ALT+1..8 jumps straight to a tab. Chosen over CTRL|SHIFT+number because
+      -- LEADER+digit selects a tab, as tmux's prefix+digit selects a window.
+      -- baseIndex is 1 in tmux.nix, so the digit and the tab label agree and
+      -- both are one off from wezterm's zero-based ActivateTab.
+      if not passthrough then
+        for i = 1, 9 do
+          table.insert(config.keys, {
+            key = tostring(i),
+            mods = 'LEADER',
+            action = wezterm.action.ActivateTab(i - 1),
+          })
+        end
+      end
+
       -- tmux's prefix is C-a and its own ALT bindings are M--, M-| and M-r, so
       -- nothing here is swallowed on the way through.
-      for i = 1, 8 do
-        table.insert(config.keys, {
-          key = tostring(i),
-          mods = 'ALT',
-          action = wezterm.action.ActivateTab(i - 1),
-        })
+      -- ALT digits go too: a passthrough window has no local tabs worth
+      -- jumping to, and the remote side may well want the key.
+      if not passthrough then
+        for i = 1, 8 do
+          table.insert(config.keys, {
+            key = tostring(i),
+            mods = 'ALT',
+            action = wezterm.action.ActivateTab(i - 1),
+          })
+        end
+      end
+
+      -- One binding per remote host for the hosts reached often enough that
+      -- the launcher's extra keystroke grates: prefix+M-<initial>. Generated
+      -- from ssh_hosts, so a host added above gets its key for free. LEADER|ALT
+      -- is otherwise used only by M-r (rotate-panes), which no hostname starts
+      -- with.
+      if not passthrough then
+        for _, h in ipairs(ssh_hosts) do
+          if h.host ~= this_host then
+            table.insert(config.keys, {
+              key = h.key,
+              mods = 'LEADER|ALT',
+              action = wezterm.action.SpawnTab { DomainName = h.host },
+            })
+          end
+        end
       end
 
       -- Tab title = hostname of the machine that tab's shell is on. The title
@@ -291,46 +544,18 @@
         -- (nvim, less, a build) cannot leak into the tab bar. Remembering the
         -- last good value per tab beats falling back to the local hostname,
         -- which would mislabel a remote tab as this machine.
+        -- An explicit LEADER+, rename wins outright: set_title is the signal
+        -- that the user wants this tab called something, and overwriting it
+        -- with a hostname would make the rename look broken.
+        if tab.tab_title and tab.tab_title ~= "" then
+          return ' ' .. tab.tab_title .. ' '
+        end
         local host = (tab.active_pane.title or ""):match('^%s*([%w._-]+)%s*$')
         if host then
           host_by_tab[tab.tab_id] = host
         end
         return ' ' .. (host_by_tab[tab.tab_id] or wezterm.hostname():match('^[^.]+')) .. ' '
       end)
-
-      -- The other machines, as panes in this wezterm rather than as sessions
-      -- behind an ssh.
-      --
-      -- multiplexing = 'WezTerm' (the default) runs wezterm-mux-server on the
-      -- far side, which is what makes a remote pane a real pane here: it
-      -- survives a dropped link, reconnects on its own, and shows up in
-      -- `wezterm cli list`. Plain ssh cannot do any of that, and tmux cannot
-      -- do it at all -- a tmux client reaches one server, on one machine.
-      --
-      -- The paths and usernames are spelled out because they differ per host
-      -- and a non-interactive ssh gets none of the PATH a login shell would.
-      -- These domains are not connected at startup: a machine that is asleep
-      -- should cost nothing until you ask for it.
-      config.ssh_domains = {
-        {
-          name = 'suspense',
-          remote_address = 'suspense',
-          username = 'dlangevi',
-          remote_wezterm_path = '/home/dlangevi/.nix-profile/bin/wezterm',
-        },
-        {
-          name = 'dance',
-          remote_address = 'dance',
-          username = 'dance',
-          remote_wezterm_path = '/home/dance/.nix-profile/bin/wezterm',
-        },
-        {
-          name = 'console',
-          remote_address = 'console',
-          username = 'console',
-          remote_wezterm_path = '/home/console/.nix-profile/bin/wezterm',
-        },
-      }
 
       -- Go to the pane that stamped itself `herd_pane=<host>:<tty>`.
       --
@@ -394,6 +619,10 @@
       wezterm.on('update-right-status', function(window)
         local now = wezterm.time.now()
         window:set_right_status(wezterm.format {
+          -- A passthrough window looks identical otherwise, and "why did my
+          -- prefix stop working" is a bad way to find out which one this is.
+          { Foreground = { AnsiColor = 'Olive' } },
+          { Text = passthrough and 'passthrough  ' or "" },
           { Foreground = { AnsiColor = 'Blue' } },
           { Text = window:active_workspace() .. '  ' },
           { Foreground = { AnsiColor = 'Fuchsia' } },

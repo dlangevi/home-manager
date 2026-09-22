@@ -67,6 +67,14 @@
     };
   };
 
+
+  networking.firewall = {
+    enable = true;
+    allowedTCPPorts = [
+      2234  # nicotine+ (soulseek listening port; match it in Preferences -> Network)
+    ];
+  };
+
   fonts.packages = with pkgs; [ noto-fonts-cjk-sans ];
 
   environment.systemPackages = with pkgs; [
