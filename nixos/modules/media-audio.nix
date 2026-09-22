@@ -51,7 +51,7 @@ let
   # snapcast.nix links jpcMusicDir into MPD's music root as well, so this path
   # has a second consumer -- moving it means fixing that module too.
   jpcMusicDir = "/srv/media/jpc-music";
-  # Requester-submitted albums (music-mgmt's ingestion queue), kept separate
+  # Requester-submitted albums (album-requests ingestion queue, ~/auto/media-services), kept separate
   # from both the household library and jpc-music. Same shape as jpc-music:
   # a plain directory directly under the world-traversable /srv/media, owned
   # by dance so the ingest service (album-requests.nix) can write to it
@@ -103,7 +103,7 @@ let
   tunesSubdomain = "tunes.${jpcDomain}";
   flixSubdomain = "flix.${jpcDomain}";
 
-  # music-mgmt's ingestion queue: search MusicBrainz, submit an artist+album
+  # The album-requests ingestion queue (~/auto/media-services): search MusicBrainz, submit an artist+album
   # request, drive slskd on suspense to acquire it, tag/art/publish into
   # /srv/media/collective-import. Runs as a plain systemd service (see
   # album-requests.nix) rather than one of navidrome/jellyfin's own ports.
@@ -376,7 +376,7 @@ in
       locations."/request/" = {
         # Trailing slash on both sides of proxyPass strips the /request/
         # prefix before forwarding, so the backend still sees plain /api/...
-        # and /admin -- matches ingest/app.py's own routes unmodified.
+        # and /admin -- matches media-services/backend/app.py's own routes unmodified.
         proxyPass = "http://127.0.0.1:${toString ingestPort}/";
       };
 

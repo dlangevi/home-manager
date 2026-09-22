@@ -1,5 +1,5 @@
 # slskd, a headless Soulseek daemon with a REST API -- the acquisition
-# backend for music-mgmt's ingestion queue (request.jpc.dlangevi.com,
+# backend for the album-requests ingestion queue (~/auto/media-services,
 # served from dance). Runs on dance itself, alongside the ingestion service
 # that drives it -- this serves neighbours' requests and needs to be up
 # whenever dance is, unlike suspense which sleeps. Nicotine+ stays on
@@ -21,7 +21,7 @@ let
   webPort = 5030;
 
   # Where finished downloads land -- the ingestion service's own staging
-  # root (ingest/app.py's STAGING_ROOT). Must NOT be under /home: slskd's
+  # root (media-services/backend/app.py's STAGING_ROOT). Must NOT be under /home: slskd's
   # default hardening sets ProtectHome=true/ProtectSystem=strict, which
   # masks /home entirely regardless of ReadWritePaths. /srv/media is
   # already the writable, non-/home location this pipeline publishes into
