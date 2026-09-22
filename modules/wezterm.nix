@@ -113,6 +113,20 @@ in
       config.audible_bell = 'Disabled'
       config.check_for_updates = false
 
+      -- Not cosmetic: this is what keeps a mux pane repainting. Every pane
+      -- here is a mux-client pane (default_domain, below), and a client pane
+      -- that misses a server push can only recover by polling -- except
+      -- wezterm calls that poll from get_changed_since(), which only runs
+      -- while drawing a frame. No push means no repaint means no frame means
+      -- no poll, and the pane sits stale until a keypress or mouse event
+      -- forces a draw. The status tick is the one thing that forces a draw on
+      -- its own, so its interval is the ceiling on how long a pane can be
+      -- wrong; 1000ms (the default) was visible as output arriving in bursts.
+      -- The real fix belongs upstream -- the client's poll backoff runs to
+      -- MAX_POLL_INTERVAL = 30s -- and this only narrows the window.
+      -- Costs running the update-status callback below 10x a second.
+      config.status_update_interval = 100
+
       -- fcitx5 pinyin comes from base/input-method.nix; without IME support
       -- the candidate window never appears.
       config.use_ime = true
@@ -889,8 +903,13 @@ in
           table.insert(left, { Foreground = { AnsiColor = 'Yellow' } })
           table.insert(left, { Text = ' ^A ' })
         end
-        local domain = pane and pane:get_domain_name()
-        if domain and domain ~= this_host then
+        -- The handle can outlive the pane -- a split closing races the status
+        -- tick -- and get_domain_name *raises* for a pane the mux has already
+        -- dropped rather than returning nil, so `pane and` is not enough of a
+        -- guard. It threw once an hour at the old 1000ms interval; at 100ms it
+        -- would be a steady trickle of backtraces into the gui log.
+        local ok, domain = pcall(function() return pane and pane:get_domain_name() end)
+        if ok and domain and domain ~= this_host then
           table.insert(left, { Foreground = { AnsiColor = 'Teal' } })
           table.insert(left, { Text = ' ' .. domain .. ' ' })
         end
