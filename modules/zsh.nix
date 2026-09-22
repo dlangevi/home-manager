@@ -74,6 +74,32 @@
       _host_title() { print -Pn "\e]2;%m\a" }
       precmd_functions+=(_host_title)
 
+      # Name this pane in a way that survives leaving the machine.
+      #
+      # herd's dashboard aggregates sessions from every host, and jumping to one
+      # means asking wezterm to focus a pane it is proxying from another
+      # machine. Nothing else identifies that pane: wezterm reports a null tty
+      # for it, having no local pty, and renumbers its pane id, because ids
+      # belong to the mux that owns them. A user var crosses, and the pane's own
+      # shell is the only thing in a position to set one.
+      #
+      # Computed once and re-emitted per prompt: the value cannot change for the
+      # life of a pane, so a base64 fork on every prompt would be real cost for
+      # a string that is always the same. Guarded on WEZTERM_PANE so this never
+      # sprays OSC 1337 into a tmux pane, where passthrough is off and some
+      # terminals would print it instead.
+      #
+      # The hostname comes from /proc rather than `hostname -s` because the far
+      # end of this agreement -- herd's own `feed::hostname` -- reads exactly
+      # that file. Two spellings of "this machine" that differ by a domain
+      # suffix would make every jump to this host miss.
+      if [[ -n "$WEZTERM_PANE" ]]; then
+        typeset -g _herd_pane_var="$(printf '\e]1337;SetUserVar=herd_pane=%s\a' \
+          "$(printf '%s:%s' "$(cat /proc/sys/kernel/hostname)" "$(tty)" | base64 -w0)")"
+        _herd_pane_stamp() { print -n "$_herd_pane_var" }
+        precmd_functions+=(_herd_pane_stamp)
+      fi
+
       # mosh <[user@]host>: mosh's client/server vt emulation doesn't reliably
       # forward OSC 2 title updates once tmux is in the loop (mobile-shell/
       # mosh#477, #992), so the tab title is set here, locally, before any

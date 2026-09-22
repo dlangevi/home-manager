@@ -298,6 +298,74 @@
         return ' ' .. (host_by_tab[tab.tab_id] or wezterm.hostname():match('^[^.]+')) .. ' '
       end)
 
+      -- The other machines, as panes in this wezterm rather than as sessions
+      -- behind an ssh.
+      --
+      -- multiplexing = 'WezTerm' (the default) runs wezterm-mux-server on the
+      -- far side, which is what makes a remote pane a real pane here: it
+      -- survives a dropped link, reconnects on its own, and shows up in
+      -- `wezterm cli list`. Plain ssh cannot do any of that, and tmux cannot
+      -- do it at all -- a tmux client reaches one server, on one machine.
+      --
+      -- The paths and usernames are spelled out because they differ per host
+      -- and a non-interactive ssh gets none of the PATH a login shell would.
+      -- These domains are not connected at startup: a machine that is asleep
+      -- should cost nothing until you ask for it.
+      config.ssh_domains = {
+        {
+          name = 'suspense',
+          remote_address = 'suspense',
+          username = 'dlangevi',
+          remote_wezterm_path = '/home/dlangevi/.nix-profile/bin/wezterm',
+        },
+        {
+          name = 'dance',
+          remote_address = 'dance',
+          username = 'dance',
+          remote_wezterm_path = '/home/dance/.nix-profile/bin/wezterm',
+        },
+        {
+          name = 'console',
+          remote_address = 'console',
+          username = 'console',
+          remote_wezterm_path = '/home/console/.nix-profile/bin/wezterm',
+        },
+      }
+
+      -- Go to the pane that stamped itself `herd_pane=<host>:<tty>`.
+      --
+      -- Every pane's shell stamps that once (see modules/zsh.nix), and this
+      -- walks the whole mux for the match. It cannot be done any other way: a
+      -- pane wezterm is proxying from another machine reports a null tty and a
+      -- renumbered pane id, so neither of the handles a program outside wezterm
+      -- could use survives the crossing. A user var does, and only Lua can read
+      -- one back.
+      --
+      -- Walking rather than listening for the stamp is deliberate.
+      -- user-var-changed does not fire for a pane in a workspace that is not
+      -- showing, but the var is still recorded on the pane -- so a resolver
+      -- built on the event would miss exactly the sessions worth a dashboard.
+      local function herd_focus(window, pane, key)
+        for _, w in ipairs(wezterm.mux.all_windows()) do
+          for _, t in ipairs(w:tabs()) do
+            for _, p in ipairs(t:panes()) do
+              if p:get_user_vars().herd_pane == key then
+                if w:get_workspace() ~= wezterm.mux.get_active_workspace() then
+                  wezterm.mux.set_active_workspace(w:get_workspace())
+                end
+                t:activate()
+                p:activate()
+                return
+              end
+            end
+          end
+        end
+        -- Silence here would be indistinguishable from a jump that worked.
+        -- herd cannot know: it names a destination and has no way to see
+        -- whether anything answered to the name.
+        window:toast_notification('herd', 'no pane for ' .. key, nil, 4000)
+      end
+
       -- herd's wezterm backend asks the GUI to show a workspace the only way a
       -- pane can: an OSC 1337 SetUserVar. `herd jump` across workspaces is a
       -- no-op without this handler, and wezterm's CLI deliberately has no
@@ -305,9 +373,16 @@
       -- a GUI decision. The value arrives already base64-decoded.
       -- (Handlers for one event chain in wezterm, so this and any other
       -- user-var-changed handler both run; nothing here returns.)
+      --
+      -- `herd_focus` is the same channel carrying the other half of the same
+      -- idea: go to a pane on another machine. It has to be resolved here
+      -- rather than by herd because the key is a user var, and `wezterm cli`
+      -- cannot read those -- only Lua can. See below.
       wezterm.on('user-var-changed', function(window, pane, name, value)
         if name == 'herd_workspace' then
           window:perform_action(wezterm.action.SwitchToWorkspace { name = value }, pane)
+        elseif name == 'herd_focus' then
+          herd_focus(window, pane, value)
         end
       end)
 

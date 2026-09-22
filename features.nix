@@ -2,7 +2,7 @@
 {
   base         = [ ./modules/base.nix ];
   dev          = [ ./modules/dev.nix ];
-  herd         = [ dl-herd.homeModules.default ];
+  herd         = [ dl-herd.homeModules.default ./modules/herd.nix ];
   desktop-apps = [ ./modules/desktop-apps.nix ];
   documents    = [ ./modules/documents.nix ];
   gaming       = [ ./modules/gaming.nix ];
