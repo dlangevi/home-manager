@@ -24,7 +24,7 @@ usage() {
   cat <<'EOF'
 Usage:
   dlsys init                       Register this machine (interactive)
-  dlsys upgrade [target] [--update] [--pull]
+  dlsys switch [target] [--update] [--pull]
       target = auto   (default) build both layers, switch only the ones
                       whose store path differs from what is live
              = hm     home-manager switch only                (alias: hms)
@@ -45,7 +45,7 @@ Usage:
                 a merge you haven't seen.
 
   dlsys rollout [--order h1,h2,...] [--update]
-      Run 'upgrade auto' on every managed machine, one at a time, against
+      Run 'switch auto' on every managed machine, one at a time, against
       the same commit -- a host whose system layer is unchanged is never
       asked for a sudo password. Requires a clean working tree that matches its
       upstream branch; remote hosts 'git pull --ff-only' first.
@@ -151,7 +151,7 @@ do_init() {
     local existing
     existing=$(machine_features "$host")
     echo "$host is already registered as [ $existing ]." >&2
-    echo "Use 'dlsys upgrade' to apply changes, or edit machines.nix to modify the feature list." >&2
+    echo "Use 'dlsys switch' to apply changes, or edit machines.nix to modify the feature list." >&2
     exit 1
   fi
 
@@ -189,7 +189,7 @@ do_init() {
   git commit -m "chore: register $host with features $feature_list"
 
   if ! hm switch --impure --flake ".#$host"; then
-    echo "Registration committed but switch failed. Fix the issue and run './dlsys upgrade'," >&2
+    echo "Registration committed but switch failed. Fix the issue and run './dlsys switch'," >&2
     echo "or undo with 'git reset --soft HEAD~1'." >&2
     exit 1
   fi
@@ -240,7 +240,7 @@ detect_targets() {
   printf '%s' "$out"
 }
 
-do_upgrade() {
+do_switch() {
   local do_update=0
   local do_pull=0
   local target="auto"
@@ -283,7 +283,7 @@ do_upgrade() {
   fi
 
   # 'auto' resolves to the layers that actually differ. An explicit target
-  # stays a command, not a suggestion: 'dlsys upgrade nixos' re-switches even
+  # stays a command, not a suggestion: 'dlsys switch nixos' re-switches even
   # when the built system matches, which is what you want when activation
   # itself is the point (a unit to restart, a stale generation to re-link).
   # Plain if blocks rather than `[[ ... ]] && var=1`: under `set -e` a test
@@ -488,7 +488,7 @@ do_rollout() {
     echo
     echo "==> [$((i + 1))/$total] $host"
     if [[ "$host" == "$self" ]]; then
-      if ! do_upgrade auto; then
+      if ! do_switch auto; then
         remaining=("${hosts[@]:i+1}")
         echo "FAILED on $host." >&2
         if [[ ${#remaining[@]} -gt 0 ]]; then
@@ -498,7 +498,7 @@ do_rollout() {
       fi
     else
       if ! ssh -t "$(ssh_target "$host")" \
-        'set -e; cd ~/.config/home-manager && git pull --ff-only && ./dlsys upgrade auto'; then
+        'set -e; cd ~/.config/home-manager && git pull --ff-only && ./dlsys switch auto'; then
         remaining=("${hosts[@]:i+1}")
         echo "FAILED on $host." >&2
         if [[ ${#remaining[@]} -gt 0 ]]; then
@@ -518,9 +518,9 @@ case "${1:-}" in
     shift
     do_init "$@"
     ;;
-  upgrade)
+  switch)
     shift
-    do_upgrade "$@"
+    do_switch "$@"
     ;;
   rollout)
     shift

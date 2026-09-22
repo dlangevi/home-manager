@@ -11,23 +11,23 @@ it runs from any directory. Aliases cover the three forced targets.
 
 | Command        | Runs                    | Use when |
 |----------------|-------------------------|----------|
-| `dlsys upgrade`| detect, then switch     | default — you do not need to know which layer changed |
-| `hms`          | `dlsys upgrade hm`      | only `modules/` changed |
-| `nrs`          | `dlsys upgrade nixos`   | only `nixos/` changed |
-| `alls`         | `dlsys upgrade all`     | both layers, unconditionally |
+| `dlsys switch` | detect, then switch    | default — you do not need to know which layer changed |
+| `hms`          | `dlsys switch hm`      | only `modules/` changed |
+| `nrs`          | `dlsys switch nixos`   | only `nixos/` changed |
+| `alls`         | `dlsys switch all`     | both layers, unconditionally |
 
-Bare `dlsys upgrade` is target `auto`: it builds both layers, compares each
+Bare `dlsys switch` is target `auto`: it builds both layers, compares each
 against what is live, and switches only what moved — so it is the right
 suggestion when you are unsure, and it will not prompt for sudo on a
 home-manager-only change. The aliases are defined in `modules/zsh.nix` under
 `shellAliases`; if you rename one there, fix this table and `usage()` in
 `dlsys` too.
 
-Prefer `dlsys upgrade` by default. Reach for an explicit target only when
+Prefer `dlsys switch` by default. Reach for an explicit target only when
 re-running activation is the point (restart a unit, re-link a generation),
 since `auto` correctly does nothing when the built output already matches.
 
-`dlsys rollout` is a different thing — it runs `upgrade auto` on *every
+`dlsys rollout` is a different thing — it runs `switch auto` on *every
 managed machine* over ssh, not just this one. Never suggest it when the user asked to apply a
 local change.
 
@@ -100,7 +100,7 @@ gamescope, firewall integration.
 - To register a new machine: run `dlsys init` on that host and answer
   yes/no for each non-`base` feature. Commit the resulting change.
 - To change a machine's feature list: edit `machines.nix` by hand, then
-  `dlsys upgrade`.
+  `dlsys switch`.
 
 ## 4. Adding a new package — checklist
 

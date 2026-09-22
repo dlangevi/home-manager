@@ -33,9 +33,9 @@
       # Applying config: hm layer, nixos layer, both. dlsys itself is on PATH
       # via ~/.local/bin (see base.nix), so these work from any directory.
       # Renaming one means updating usage() in dlsys and the table in CLAUDE.md.
-      hms  = "dlsys upgrade hm";
-      nrs  = "dlsys upgrade nixos";
-      alls = "dlsys upgrade all";
+      hms  = "dlsys switch hm";
+      nrs  = "dlsys switch nixos";
+      alls = "dlsys switch all";
       herd-deploy = "~/auto/dl-herd/scripts/herd-deploy";
     };
     initContent = ''
