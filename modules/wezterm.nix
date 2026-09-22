@@ -12,6 +12,7 @@ let
     # ordinary window instead.
     exec ${pkgs.wezterm}/bin/wezterm start --always-new-process "$@"
   '';
+
 in
 {
   # Ship the font with the terminal so base works on non-NixOS hosts too.
@@ -201,21 +202,27 @@ in
         }
       end
 
-      -- Remote hosts as wezterm domains, so a tab can live on another machine
-      -- while sharing this window with local ones. tmux's answer to the same
-      -- want is `new-window ssh host`; a domain is better than that here,
-      -- because a split inside such a tab opens another channel to the *same*
-      -- host rather than silently landing back on this one, and prefix+c from
-      -- inside it (CurrentPaneDomain) makes another tab there too.
+      -- Every machine runs a wezterm mux server, and every machine's config
+      -- names a domain for every machine -- the local one as a unix domain, the
+      -- rest as ssh domains -- so a window here can hold tabs living on any of
+      -- them at once, and those tabs outlive the GUI showing them.
       --
-      -- multiplexing = 'None' means plain ssh: wezterm runs a shell over the
-      -- connection and nothing wezterm-side is needed on the far end. The
-      -- alternative, wezterm's own mux server, buys tmux-style detach/reattach
-      -- -- but tmux is what is already running on these hosts for that, and a
-      -- mux server is a second answer to a solved problem plus a version-lock
-      -- between the two ends.
+      -- One mux per host, not one per domain name: a mux server listens on
+      -- $XDG_RUNTIME_DIR/wezterm/sock whatever its unix domain is called, and a
+      -- client with the same config connects to that same path. So naming the
+      -- domain after its host is purely so the launcher reads as a machine
+      -- list, and a tab opened on dance from here is in the *same* mux that
+      -- dance's own GUI attaches to when someone sits down at it.
       --
-      -- Note this uses wezterm's built-in ssh client, not /usr/bin/ssh: it
+      -- multiplexing = 'WezTerm' is what makes the remote half of that true:
+      -- wezterm ssh's in, starts `wezterm-mux-server` on the far end (it is on
+      -- PATH there via ~/.nix-profile, since base ships wezterm everywhere) and
+      -- then speaks the mux protocol rather than piping a raw pty. That
+      -- protocol is version-locked between the two ends -- both come from this
+      -- flake's pin, so they agree, but a host upgraded while another is not
+      -- will refuse to connect until `dlsys rollout` catches it up.
+      --
+      -- Connections use wezterm's built-in ssh client, not /usr/bin/ssh: it
       -- reads ~/.ssh/config and ~/.ssh/id_* and talks to the agent, but an
       -- exotic ProxyJump or Match block is not guaranteed to be honoured. Keys
       -- and a flat tailnet name are, which is all these hosts need.
@@ -228,6 +235,12 @@ in
       }
 
       local this_host = wezterm.hostname():match('^[^.]+')
+
+      -- Declared unconditionally rather than from the table above, so a machine
+      -- not listed there (or not yet added) still gets its own mux instead of
+      -- default_domain naming a domain that does not exist.
+      config.unix_domains = { { name = this_host } }
+
       config.ssh_domains = {}
       for _, h in ipairs(ssh_hosts) do
         if h.host ~= this_host then
@@ -235,12 +248,32 @@ in
             name = h.host,
             remote_address = h.host,
             username = h.user,
-            multiplexing = 'None',
-            -- Without this wezterm has no idea how to start a second program
-            -- on the far end, so splits and new tabs in the domain fail.
-            assume_shell = 'Posix',
+            multiplexing = 'WezTerm',
+            -- Predictive local echo, the mux protocol's answer to typing over a
+            -- link with latency: show the keypress immediately and reconcile
+            -- when the server's version of the line arrives.
+            local_echo_threshold_ms = 10,
           })
         end
+      end
+
+      -- Spawn into this host's mux rather than straight into a child process,
+      -- so a pane survives the GUI that opened it -- the wezterm-side answer to
+      -- what tmux detach/attach does, and the reason panes come back after a
+      -- GUI crash or a deliberate close. The mux server is started on demand;
+      -- nothing has to be running first.
+      --
+      -- Not in a passthrough window. That window is a disposable view onto a
+      -- remote tmux, which is doing the persisting itself, and leaving it on
+      -- the plain process domain also keeps one launcher that still opens a
+      -- terminal when the mux is the thing that is broken.
+      --
+      -- No matching `wezterm connect` launcher is needed: with default_domain
+      -- pointing at the mux, a plain `wezterm start` -- which is what both the
+      -- packaged .desktop file and KDE's TerminalApplication run -- adopts the
+      -- windows already in the mux instead of adding another one.
+      if not passthrough then
+        config.default_domain = this_host
       end
 
       config.keys = {
