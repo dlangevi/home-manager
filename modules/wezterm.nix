@@ -668,9 +668,12 @@ in
         end
       end
 
-      -- Tab title = hostname of the machine that tab's shell is on. The title
-      -- string is the transport (see tmux.nix and zsh.nix); wezterm knows
-      -- nothing about ssh or mosh and does not need to.
+      -- Tab title = `host:command` -- which machine that tab's shell is on, and
+      -- what is running on it. The host comes over the title string, which is
+      -- the transport (see tmux.nix and zsh.nix); wezterm knows nothing about
+      -- ssh or mosh and does not need to. The command comes from wezterm's own
+      -- view of the pane's foreground process, so the two halves arrive by
+      -- completely different routes and either can be missing on its own.
       local host_by_tab = {}
       wezterm.on('format-tab-title', function(tab)
         -- Accept only a bare hostname, so a program that sets its own title
@@ -689,6 +692,21 @@ in
             host_by_tab[tab.tab_id] = host
           end
           name = host_by_tab[tab.tab_id] or wezterm.hostname():match('^[^.]+')
+
+          -- The command half. foreground_process_name is an absolute path
+          -- (/nix/store/.../bin/zsh), so only the basename is worth showing.
+          -- An idle tab says `zsh` rather than hiding the shell: no special
+          -- case, and it matches what tmux's automatic-rename shows.
+          --
+          -- A pane on a remote domain may report nothing at all -- the mux
+          -- protocol carries the process name, but a pane proxied from another
+          -- machine does not always have one to carry. Then the tab is just the
+          -- host, which is what it said before this existed.
+          local proc = tab.active_pane.foreground_process_name or ""
+          local cmd = proc:match('([^/]+)$')
+          if cmd and cmd ~= "" then
+            name = name .. ':' .. cmd
+          end
         end
 
         -- tmux's window list, in tmux's order: index, name, flags. A hostname
