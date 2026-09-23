@@ -102,9 +102,9 @@ in
       -- A tab is still one host: tab titles carry the hostname (see
       -- format-tab-title), which is what makes a remote tab readable.
       config.enable_tab_bar = true
-      config.tab_bar_at_bottom = false      -- default, but state it: tabs on top
+      config.tab_bar_at_bottom = true -- default, but state it: tabs on top
       config.use_fancy_tab_bar = false 
-      config.hide_tab_bar_if_only_one_tab = true 
+      config.hide_tab_bar_if_only_one_tab = false 
       config.tab_max_width = 24
       -- Keyboard-only rig; the button is dead weight next to CTRL|SHIFT+t.
       config.show_new_tab_button_in_tab_bar = false
