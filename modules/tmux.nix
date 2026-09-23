@@ -121,8 +121,11 @@ in
       # OSC 2 rides an ssh or mosh connection like any other output. #h is the
       # short hostname of the machine running *this server*, so a tab attached
       # to a remote session names the far end with no wezterm-side plumbing.
+      # #W is the window name -- automatic-rename makes that the running
+      # command -- giving wezterm the same `<host>:<command>` string zsh emits
+      # directly when tmux is not in the loop.
       set-option -g set-titles on
-      set-option -g set-titles-string '#h'
+      set-option -g set-titles-string '#h:#W'
 
       # Unbindings
       unbind C-b

@@ -66,13 +66,23 @@
       fi
       unset -f _is_remote_session
 
-      # Title = hostname, matching tmux's set-titles-string '#h'. This covers
-      # bare shells outside a session; oh-my-zsh's own title handling would
-      # otherwise put the cwd and last command there, and it checks this flag
-      # at runtime so setting it here is enough.
+      # Title = "<host>:<command>". The host half is what makes a remote tab
+      # readable (tmux's set-titles-string '#h'); the command half is what tmux's
+      # automatic-rename used to show. wezterm parses both out of this one string
+      # (see format-tab-title in wezterm.nix) -- it cannot get the command itself
+      # for a pane proxied from another machine, so the shell has to say it.
+      # oh-my-zsh's own title handling would otherwise put the cwd here, and it
+      # checks this flag at runtime so setting it here is enough.
       DISABLE_AUTO_TITLE="true"
-      _host_title() { print -Pn "\e]2;%m\a" }
+      _dl_title() { print -Pn "\e]2;%m:$1\a" }
+      # At the prompt nothing is running, so the shell names itself, matching
+      # what tmux's automatic-rename showed for an idle window.
+      _host_title() { _dl_title zsh }
       precmd_functions+=(_host_title)
+      # preexec gets the raw command line; first word, basename only, so
+      # `/nix/store/.../bin/btop -t` reads as `btop`.
+      _cmd_title() { _dl_title "''${''${1%% *}:t}" }
+      preexec_functions+=(_cmd_title)
 
       # Name this pane in a way that survives leaving the machine.
       #

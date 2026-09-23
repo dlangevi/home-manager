@@ -786,18 +786,17 @@ in
         end
       end
 
-      -- Tab title = `host:command` -- which machine that tab's shell is on, and
-      -- what is running on it. The host comes over the title string, which is
-      -- the transport (see tmux.nix and zsh.nix); wezterm knows nothing about
-      -- ssh or mosh and does not need to. The command comes from wezterm's own
-      -- view of the pane's foreground process, so the two halves arrive by
-      -- completely different routes and either can be missing on its own.
+      -- Tab title = `<h>:<command>` -- which machine that tab's shell is on, and
+      -- what is running on it. Both halves come over the pane title string, set
+      -- by the shell itself (see zsh.nix and tmux.nix); wezterm knows nothing
+      -- about ssh or mosh and does not need to. The command cannot come from
+      -- wezterm's own foreground_process_name, because a pane proxied from
+      -- another machine does not reliably carry one -- which is why every tab
+      -- used to read as a bare hostname. Last good value is remembered per tab,
+      -- so a moment with no title does not blank the label.
       local host_by_tab = {}
+      local cmd_by_tab = {}
       wezterm.on('format-tab-title', function(tab)
-        -- Accept only a bare hostname, so a program that sets its own title
-        -- (nvim, less, a build) cannot leak into the tab bar. Remembering the
-        -- last good value per tab beats falling back to the local hostname,
-        -- which would mislabel a remote tab as this machine.
         -- An explicit LEADER+, rename wins outright: set_title is the signal
         -- that the user wants this tab called something, and overwriting it
         -- with a hostname would make the rename look broken.
@@ -805,26 +804,26 @@ in
         if tab.tab_title and tab.tab_title ~= "" then
           name = tab.tab_title
         else
-          local host = (tab.active_pane.title or ""):match('^%s*([%w._-]+)%s*$')
+          -- Accept only `<host>:<command>` or a bare hostname, so a program that
+          -- sets its own free-form title (nvim, less, a build) cannot leak into
+          -- the tab bar.
+          local title = tab.active_pane.title or ""
+          local host, cmd = title:match('^%s*([%w._-]+):([%w._-]+)%s*$')
+          if not host then
+            host = title:match('^%s*([%w._-]+)%s*$')
+          end
           if host then
             host_by_tab[tab.tab_id] = host
           end
-          name = host_by_tab[tab.tab_id] or wezterm.hostname():match('^[^.]+')
-
-          -- The command half. foreground_process_name is an absolute path
-          -- (/nix/store/.../bin/zsh), so only the basename is worth showing.
-          -- An idle tab says `zsh` rather than hiding the shell: no special
-          -- case, and it matches what tmux's automatic-rename shows.
-          --
-          -- A pane on a remote domain may report nothing at all -- the mux
-          -- protocol carries the process name, but a pane proxied from another
-          -- machine does not always have one to carry. Then the tab is just the
-          -- host, which is what it said before this existed.
-          local proc = tab.active_pane.foreground_process_name or ""
-          local cmd = proc -- proc:match('([^/]+)$')
-          if cmd and cmd ~= "" then
-            name = name .. ':' .. cmd
+          if cmd then
+            cmd_by_tab[tab.tab_id] = cmd
           end
+          host = host_by_tab[tab.tab_id] or wezterm.hostname():match('^[^.]+')
+
+          -- One letter of host is enough to tell the machines apart at a
+          -- glance, and it leaves tab_max_width for the command, which is the
+          -- half that actually changes.
+          name = host:sub(1, 1) .. ':' .. (cmd_by_tab[tab.tab_id] or 'zsh')
         end
 
         -- tmux's window list, in tmux's order: index, name, flags. A hostname
