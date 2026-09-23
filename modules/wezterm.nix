@@ -821,7 +821,7 @@ in
           -- machine does not always have one to carry. Then the tab is just the
           -- host, which is what it said before this existed.
           local proc = tab.active_pane.foreground_process_name or ""
-          local cmd = proc:match('([^/]+)$')
+          local cmd = proc -- proc:match('([^/]+)$')
           if cmd and cmd ~= "" then
             name = name .. ':' .. cmd
           end
@@ -945,16 +945,10 @@ in
           table.insert(left, { Foreground = { AnsiColor = 'Yellow' } })
           table.insert(left, { Text = ' ^A ' })
         end
-        -- The handle can outlive the pane -- a split closing races the status
-        -- tick -- and get_domain_name *raises* for a pane the mux has already
-        -- dropped rather than returning nil, so `pane and` is not enough of a
-        -- guard. It threw once an hour at the old 1000ms interval; at 100ms it
-        -- would be a steady trickle of backtraces into the gui log.
-        local ok, domain = pcall(function() return pane and pane:get_domain_name() end)
-        if ok and domain and domain ~= this_host then
-          table.insert(left, { Foreground = { AnsiColor = 'Teal' } })
-          table.insert(left, { Text = ' ' .. domain .. ' ' })
-        end
+
+        local current_session = wezterm.mux.get_active_workspace()
+        table.insert(left, { Foreground = { AnsiColor = 'Teal' } })
+        table.insert(left, { Text = ' ' .. current_session .. ' ' })
         window:set_left_status(wezterm.format(left))
 
         local now = wezterm.time.now()
