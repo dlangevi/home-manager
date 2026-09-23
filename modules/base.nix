@@ -38,7 +38,10 @@
     zoxide
     gh
     htop
-    btop
+    # cudaSupport only pulls in the autoAddDriverRunpath hook (no CUDA, nothing
+    # unfree); without it btop's dlopen of libnvidia-ml.so.1 fails and the GPU
+    # box never appears on NVIDIA hosts.
+    (btop.override { cudaSupport = true; })
     wget
     unzip
     xclip
