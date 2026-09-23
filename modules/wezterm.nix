@@ -449,10 +449,17 @@ in
             remote_address = h.host,
             username = h.user,
             multiplexing = 'WezTerm',
-            -- Predictive local echo, the mux protocol's answer to typing over a
-            -- link with latency: show the keypress immediately and reconcile
-            -- when the server's version of the line arrives.
-            local_echo_threshold_ms = 10,
+            -- Predictive local echo deliberately left unset (wezterm defaults
+            -- it to 10ms for an ssh domain, so omitting it is the off switch).
+            -- It paints a guess of the keypress and reconciles when the
+            -- server's version of the line arrives, which is worth it over a
+            -- link with real latency and not over these -- every host here is
+            -- a sub-millisecond LAN hop, so the guess buys no visible time and
+            -- costs a wrong glyph whenever the prediction misses: anything
+            -- that is not plain line-editing (a TUI, a pager, a shell's
+            -- syntax highlighting, an autosuggestion) redraws differently than
+            -- the echo assumed, and the flicker back to the truth reads as the
+            -- terminal being wrong.
           })
         end
       end
