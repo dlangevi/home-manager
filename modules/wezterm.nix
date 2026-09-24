@@ -106,8 +106,12 @@ in
       config.use_fancy_tab_bar = false 
       config.hide_tab_bar_if_only_one_tab = false 
       config.tab_max_width = 24
-      -- Keyboard-only rig; the button is dead weight next to CTRL|SHIFT+t.
-      config.show_new_tab_button_in_tab_bar = false
+      -- The one tab-bar element wezterm will hand a click to Lua
+      -- (new-tab-button-click). Relabelled to the current session name and
+      -- rewired to the session picker below, which is the only way to get a
+      -- clickable session name at all: set_left_status text takes no mouse
+      -- events. Middle/right click still does what the button says on the tin.
+      config.show_new_tab_button_in_tab_bar = true
       config.window_padding = { left = 2, right = 2, top = 2, bottom = 2 }
       config.scrollback_lines = 10000
       config.audible_bell = 'Disabled'
@@ -337,6 +341,25 @@ in
         if workspace_now[id] ~= ws then
           workspace_prev[id] = workspace_now[id]
           workspace_now[id] = ws
+
+          -- The session-picker button's label. tab_bar_style is config, not
+          -- state, so the live name can only get in there through a per-window
+          -- override -- which is why this sits behind the same changed-check as
+          -- the toggle above rather than in update-status, where it would
+          -- reconfigure the window ten times a second.
+          window:set_config_overrides {
+            tab_bar_style = {
+              new_tab = wezterm.format {
+                { Foreground = { AnsiColor = 'Teal' } },
+                { Text = '  ' .. ws .. ' ▾ ' },
+              },
+              new_tab_hover = wezterm.format {
+                { Attribute = { Intensity = 'Bold' } },
+                { Foreground = { AnsiColor = 'Fuchsia' } },
+                { Text = '  ' .. ws .. ' ▾ ' },
+              },
+            },
+          }
         end
       end
 
@@ -971,6 +994,20 @@ in
           { Foreground = { AnsiColor = 'Fuchsia' } },
           { Text = now:format('%R %m-%d') .. ' ' },
         })
+      end)
+
+      -- Left click on that button opens the session list; every choice in it is
+      -- clickable, since InputSelector takes a LeftClick on a row. The other
+      -- buttons keep the default (spawn a tab), so the behaviour the button
+      -- used to have is still one right-click away. Returning false stops
+      -- wezterm running the default action on top of ours.
+      wezterm.on('new-tab-button-click', function(window, pane, button, default_action)
+        if button == 'Left' then
+          window:perform_action(workspace_picker(), pane)
+        elseif default_action then
+          window:perform_action(default_action, pane)
+        end
+        return false
       end)
 
       return config
