@@ -996,20 +996,6 @@ in
         })
       end)
 
-      -- Left click on that button opens the session list; every choice in it is
-      -- clickable, since InputSelector takes a LeftClick on a row. The other
-      -- buttons keep the default (spawn a tab), so the behaviour the button
-      -- used to have is still one right-click away. Returning false stops
-      -- wezterm running the default action on top of ours.
-      wezterm.on('new-tab-button-click', function(window, pane, button, default_action)
-        if button == 'Left' then
-          window:perform_action(workspace_picker(), pane)
-        elseif default_action then
-          window:perform_action(default_action, pane)
-        end
-        return false
-      end)
-
       return config
     '';
   };
