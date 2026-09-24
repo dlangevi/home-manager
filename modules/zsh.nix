@@ -74,13 +74,32 @@
       # oh-my-zsh's own title handling would otherwise put the cwd here, and it
       # checks this flag at runtime so setting it here is enough.
       DISABLE_AUTO_TITLE="true"
-      _dl_title() { print -Pn "\e]2;%m:$1\a" }
+      # OSC 2 is only half of it. The title of a pane wezterm is proxying from
+      # another mux is not reliably present the moment that pane appears --
+      # attaching to a domain or switching workspace shows the tab before any
+      # title has crossed -- so the same value also goes out as a user var,
+      # which is mux state: replicated on attach and pushed on change, with no
+      # dependence on the pane having produced output since. wezterm prefers the
+      # user var and falls back to the title (which is what a tmux pane sets,
+      # via set-titles-string in tmux.nix).
+      _dl_title() {
+        print -Pn "\e]2;%m:$1\a"
+        [[ -n "$WEZTERM_PANE" ]] || return
+        printf '\e]1337;SetUserVar=dl_title=%s\a' \
+          "$(print -Pn "%m:$1" | base64 -w0)"
+      }
       # At the prompt nothing is running, so the shell names itself, matching
-      # what tmux's automatic-rename showed for an idle window.
-      _host_title() { _dl_title zsh }
+      # what tmux's automatic-rename showed for an idle window. Constant for the
+      # life of the pane, so the encode happens once rather than per prompt.
+      typeset -g _dl_idle_title=""
+      _host_title() {
+        [[ -n "$_dl_idle_title" ]] || _dl_idle_title="$(_dl_title zsh)"
+        print -n "$_dl_idle_title"
+      }
       precmd_functions+=(_host_title)
       # preexec gets the raw command line; first word, basename only, so
-      # `/nix/store/.../bin/btop -t` reads as `btop`.
+      # `/nix/store/.../bin/btop -t` reads as `btop`. One encode per command
+      # run, next to the command itself -- not a cost worth caching around.
       _cmd_title() { _dl_title "''${''${1%% *}:t}" }
       preexec_functions+=(_cmd_title)
 

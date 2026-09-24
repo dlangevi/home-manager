@@ -804,13 +804,23 @@ in
         if tab.tab_title and tab.tab_title ~= "" then
           name = tab.tab_title
         else
-          -- Accept only `<host>:<command>` or a bare hostname, so a program that
-          -- sets its own free-form title (nvim, less, a build) cannot leak into
-          -- the tab bar.
-          local title = tab.active_pane.title or ""
-          local host, cmd = title:match('^%s*([%w._-]+):([%w._-]+)%s*$')
+          -- The user var first: it is mux state, so it is already there when a
+          -- tab appears on attach or a workspace switch, where the pane title
+          -- has not necessarily crossed yet -- that gap is what made a tab need
+          -- focusing before its name was right. The title is the fallback, and
+          -- it is the only channel a tmux pane has (set-titles-string).
+          --
+          -- Either way accept only `<host>:<command>` or a bare hostname, so a
+          -- program that sets its own free-form title (nvim, less, a build)
+          -- cannot leak into the tab bar.
+          local vars = tab.active_pane.user_vars or {}
+          local source = vars.dl_title
+          if not source or source == "" then
+            source = tab.active_pane.title or ""
+          end
+          local host, cmd = source:match('^%s*([%w._-]+):([%w._-]+)%s*$')
           if not host then
-            host = title:match('^%s*([%w._-]+)%s*$')
+            host = source:match('^%s*([%w._-]+)%s*$')
           end
           if host then
             host_by_tab[tab.tab_id] = host
