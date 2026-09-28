@@ -1,6 +1,11 @@
-{ pkgs, ... }:
+{ pkgs, lib, hostname, ... }:
 
 let
+  # The fleet, minus this machine -- sshing to yourself to get a nested tmux is
+  # pure downside. See hosts.nix; `hostname` comes from flake.nix.
+  hosts = import ../hosts.nix;
+  remotes = lib.filterAttrs (h: _: h != hostname) hosts;
+
   # Cross-platform clipboard copy: reads stdin, writes to system clipboard.
   # Picks the right backend based on session env (Wayland / X11 / WSL).
   clipboardCopy = pkgs.writeShellApplication {
@@ -62,6 +67,103 @@ let
       exit 0
     '';
   };
+  # Attach a tmux window to another host, wezterm-ssh-domain style: the window
+  # IS the remote machine. The remote session persists (reconnecting reattaches
+  # it) but deliberately does not look nested -- `status off` kills the second
+  # status bar, and `prefix C-b` keeps C-a arriving here, at the outer server,
+  # so there is no prefix dance.
+  #
+  # C-b rather than None because the inner session's copy-mode is the *only*
+  # way to read the remote's scrollback: the inner tmux owns the alternate
+  # screen, so this pane's own history stays empty. `C-b [` is that hatch.
+  #
+  # detach-on-destroy on is not optional. The remote runs this same config,
+  # which sets it off globally; without the override, exiting the remote shell
+  # drops the client into some other session on that host -- one with no status
+  # bar and a foreign prefix, and no clue how it got there.
+  #
+  # Three shell-joined tmux calls rather than one `\;` command list: `\;` has to
+  # survive the local shell, the remote shell and tmux's own command splitter,
+  # and fails silently when one of them disagrees. `-A -d` also lets the options
+  # land before any client attaches, so the remote status bar never flashes.
+  domainConnect = pkgs.writeShellApplication {
+    name = "tmux-domain";
+    runtimeInputs = with pkgs; [ openssh tmux ];
+    text = ''
+      dest="$1"   # user@host
+      label="$2"  # this machine's hostname, baked in by nix
+
+      # One remote session per local session, not per pane: a pane id would
+      # change if the local server restarted (silently adopting a stale remote
+      # session), while the local session name is stable and meaningful. Two
+      # local sessions therefore get two independent remote sessions rather
+      # than two clients mirroring one.
+      sess=$(tmux display-message -p '#S' 2>/dev/null || echo default)
+      name="dom-''${label}-''${sess}"
+      name="''${name//[^A-Za-z0-9-]/-}"
+
+      # console is on the tailnet but powered off most of the day: without an
+      # explicit timeout that is a two-minute hang on a dead SYN, with nothing
+      # on screen to say so.
+      # Setting up the session and attaching to it are reported separately,
+      # because their failures are not the same event and tmux gives them the
+      # same exit status. Setup problems answer with 97; once the session
+      # exists, the attach always reports 0, since by then every way out --
+      # detaching with C-b d, or `exit` destroying the session -- is a normal
+      # end to the window and not something to complain about.
+      #
+      # That last case is the one worth naming: exiting the remote shell
+      # destroys the session, and if it was the only one on that host the
+      # remote *server* shuts down too, so `tmux attach` returns 1 having
+      # printed "no server running". Treating that as an error would leave a
+      # "press any key" prompt behind every ordinary exit.
+      status=0
+      ssh -t \
+        -o ConnectTimeout=5 \
+        -o ServerAliveInterval=15 \
+        -o ServerAliveCountMax=3 \
+        "$dest" \
+        "tmux new-session -A -d -s '$name' \
+         && tmux set -t '$name' status off \
+         && tmux set -t '$name' prefix C-b \
+         && tmux set -t '$name' detach-on-destroy on \
+         || exit 97
+         tmux attach -t '$name'
+         exit 0" || status=$?
+
+      # Hold the window open on failure. Without this an unreachable host just
+      # flashes the window closed, taking ssh's diagnostic with it. 255 is
+      # ssh's own "I could not do this" status, which covers both a host that
+      # is off and a link that died mid-session.
+      if [ "$status" -ne 0 ]; then
+        case "$status" in
+          97)  reason="remote tmux would not start or configure the session" ;;
+          255) reason="ssh could not connect, or the connection dropped" ;;
+          *)   reason="exited $status" ;;
+        esac
+        echo >&2
+        echo "tmux-domain: $dest ($name): $reason." >&2
+        echo "Press any key to close this window." >&2
+        read -r -n 1 -s
+      fi
+      exit "$status"
+    '';
+  };
+
+  # prefix+C menu rows and the prefix+M-<key> shortcuts, both generated from
+  # hosts.nix so a host added there gets all of it for free. -S means a second
+  # press selects the existing window for that host instead of opening a
+  # duplicate; -n names the window after the machine, which also pins it
+  # against automatic-rename (which would otherwise call every one of them
+  # "ssh").
+  domainSpawn = h: v:
+    "new-window -S -n ${h} '${domainConnect}/bin/tmux-domain ${v.user}@${h} ${hostname}'";
+
+  domainMenu = lib.concatStringsSep " "
+    (lib.mapAttrsToList (h: v: "\"${h}\" ${v.key} \"${domainSpawn h v}\"") remotes);
+
+  domainKeys = lib.concatStringsSep "\n"
+    (lib.mapAttrsToList (h: v: "bind-key M-${v.key} ${domainSpawn h v}") remotes);
 in
 {
   home.packages = [ clipboardCopy ];
@@ -75,7 +177,23 @@ in
     escapeTime = 10;
     terminal = "tmux-256color";
     plugins = with pkgs.tmuxPlugins; [
-      vim-tmux-navigator
+      {
+        # The navigator binds C-h/j/k/l in the *root* table, guarded by a
+        # `ps -o comm=` check on the pane's tty, and forwards the key only when
+        # that command looks like vim. In a domain window the pane's command is
+        # `ssh`, so without `ssh` in the pattern the outer server would swallow
+        # C-h/j/k/l and run select-pane -- meaning nvim on the far end never
+        # receives them, which on a fleet where nvim is the editor is the whole
+        # point of the window gone.
+        #
+        # Adding `ssh` makes the outer server forward instead, and the remote's
+        # own copy of this plugin then makes the real decision against the real
+        # tty. Note this applies to every ssh pane, not just domain windows:
+        # plain `ssh` panes now send those keys to the far end too, which is
+        # the consistent reading of "the keys belong to whatever is on screen".
+        plugin = vim-tmux-navigator;
+        extraConfig = "set -g @vim_navigator_pattern '(\\S+/)?g?\\.?(view|l?n?vim?x?|fzf|ssh)(diff)?(-wrapped)?'";
+      }
       yank
     ];
     extraConfig = ''
@@ -147,6 +265,13 @@ in
       # unconditionally, and `bind-key a send-prefix` above is what still
       # reaches this server from inside a wezterm pane -- wezterm's LEADER a
       # forwards the C-a that gets here.
+      #
+      # prefix+C is a deliberate exception to the key-for-key mirroring, and
+      # should not be "fixed" into one: wezterm's LEADER C is ShowLauncherArgs
+      # over its own ssh_domains, this one is a display-menu that opens an ssh
+      # window. Same key, same intent, different mechanism -- and with
+      # mux_mode false only this one is live. The host list underneath them is
+      # the one part that cannot drift, because both sides now read hosts.nix.
       bind-key - split-window -v
       bind-key \\ split-window -h
       bind-key Enter break-pane
@@ -173,6 +298,19 @@ in
       # Layouts
       # prefix+R snaps a herd workspace back to 70/30 after a terminal resize
       # has skewed it; the geometry lives in herd, not here.
+      # Domains. prefix+c stays tmux's own local new-window; prefix+C is
+      # prefix+c aimed somewhere else -- pick a host, get a window that IS that
+      # host. These are the wezterm ssh-domain semantics, restored on the side
+      # that owns sessions now that wezterm is not the multiplexer.
+      #
+      # The menu, its mnemonics and the per-host prefix+M-<key> shortcuts are
+      # all generated from hosts.nix, and this machine is filtered out of its
+      # own menu. M-r (rotate-window, below) is the only other M-<letter>, and
+      # no hostname starts with r -- the same invariant wezterm's table relies
+      # on.
+      bind-key C display-menu -T "#[align=centre] domains " -x C -y C ${domainMenu}
+      ${domainKeys}
+
       bind-key R run-shell "herd relayout"
       bind o select-layout "active-only"
       bind M-- select-layout "even-vertical"

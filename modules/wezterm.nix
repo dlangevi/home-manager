@@ -1,6 +1,16 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 
 let
+  # The same fleet tmux's domain menu reads, rendered as the Lua table this
+  # config already expected. Generated so the host list cannot drift between
+  # the two; everything downstream (ssh_domains, the LEADER|ALT loop) is
+  # unchanged. this_host below stays a runtime wezterm.hostname() call on
+  # purpose -- it is also the fallback for a machine that is not in the table
+  # at all, which a nix-baked hostname would not cover.
+  sshHostsLua = lib.concatStrings (lib.mapAttrsToList (host: v:
+    "        { host = '${host}', user = '${v.user}', key = '${v.key}' },\n"
+  ) (import ../hosts.nix));
+
   # Launches wezterm in passthrough mode -- see the long comment in the Lua
   # below. The env var is the whole mechanism; this exists so the desktop entry
   # has something to point Exec= at (a .desktop file cannot set environment
@@ -469,10 +479,7 @@ in
       -- simply powered off most of the day, which costs nothing here because
       -- domains are not connected until something asks for one.
       local ssh_hosts = {
-        { host = 'suspense', user = 'dlangevi', key = 's' },
-        { host = 'dance',    user = 'dance',    key = 'd' },
-        { host = 'console',  user = 'console',  key = 'c' },
-      }
+${sshHostsLua}      }
 
       local this_host = wezterm.hostname():match('^[^.]+')
 

@@ -74,15 +74,21 @@
         ];
       };
 
-      mkHome = featureNames: home-manager.lib.homeManagerConfiguration {
+      # `hostname` is threaded in because a home-manager module otherwise has no
+      # way to know which machine it is being built for -- there is no runtime
+      # call to reach for, the way wezterm's Lua has wezterm.hostname(). It is
+      # simply the attr name from machines.nix, which was being discarded here.
+      # modules/tmux.nix uses it to leave this machine out of its own domain
+      # menu.
+      mkHome = hostname: featureNames: home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         modules = builtins.concatMap (name: features.${name}) featureNames;
-        extraSpecialArgs = { inherit username homeDirectory; };
+        extraSpecialArgs = { inherit username homeDirectory hostname; };
       };
     in
     {
       homeConfigurations =
-        builtins.mapAttrs (_: featureNames: mkHome featureNames) machines;
+        builtins.mapAttrs (host: featureNames: mkHome host featureNames) machines;
 
       nixosConfigurations =
         builtins.mapAttrs (host: _: mkNixos host) machines;

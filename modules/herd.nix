@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, ... }:
 
 # The fleet, as every machine in it sees the others.
 #
@@ -7,11 +7,11 @@
 # -- there is no hub to configure, and nothing to change when you move.
 #
 # The destinations carry usernames because the three do not agree on one, which
-# is also why this cannot be derived from the hostname alone.
+# is also why this cannot be derived from the hostname alone. They come from
+# hosts.nix now rather than being written out here; the order is alphabetical
+# as a result, which herd does not care about (remote.rs `hosts()` filters the
+# list and fans out over it, with no privileged first entry).
 {
-  programs.herd.hosts = [
-    "dlangevi@suspense"
-    "dance@dance"
-    "console@console"
-  ];
+  programs.herd.hosts =
+    lib.mapAttrsToList (host: v: "${v.user}@${host}") (import ../hosts.nix);
 }
