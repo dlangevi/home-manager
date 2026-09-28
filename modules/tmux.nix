@@ -73,9 +73,15 @@ let
   # status bar, and `prefix C-b` keeps C-a arriving here, at the outer server,
   # so there is no prefix dance.
   #
-  # C-b rather than None because the inner session's copy-mode is the *only*
-  # way to read the remote's scrollback: the inner tmux owns the alternate
-  # screen, so this pane's own history stays empty. `C-b [` is that hatch.
+  # The inner prefix is C-S-a: the same key as this server's own prefix, aimed
+  # at the far end, which only works because extended-keys (set above) makes
+  # the two distinguishable. C-a keeps driving this server, C-S-a drives the
+  # remote one, and neither has to be escaped through the other.
+  #
+  # It is a prefix rather than None because the inner session's copy-mode is
+  # the *only* way to read the remote's scrollback: the inner tmux owns the
+  # alternate screen, so this pane's own history stays empty. `C-S-a [` is
+  # that hatch.
   #
   # detach-on-destroy on is not optional. The remote runs this same config,
   # which sets it off globally; without the override, exiting the remote shell
@@ -86,9 +92,17 @@ let
   # survive the local shell, the remote shell and tmux's own command splitter,
   # and fails silently when one of them disagrees. `-A -d` also lets the options
   # land before any client attaches, so the remote status bar never flashes.
+  #
+  # mosh rather than ssh, so a suspended laptop or a changed network does not
+  # take the window with it -- mosh roams instead of dropping, which is the
+  # layer the persistent session cannot cover by itself. It needs `sh -c`
+  # because mosh hands the command to the far end as argv without a shell to
+  # parse it, so the && chain would otherwise arrive as literal arguments.
+  # UDP 60000-61000 is already open fleet-wide (nixos/common.nix), and mosh
+  # still bootstraps over ssh, which is where the connect timeout applies.
   domainConnect = pkgs.writeShellApplication {
     name = "tmux-domain";
-    runtimeInputs = with pkgs; [ openssh tmux ];
+    runtimeInputs = with pkgs; [ mosh openssh tmux ];
     text = ''
       dest="$1"   # user@host
       label="$2"  # this machine's hostname, baked in by nix
@@ -117,19 +131,24 @@ let
       # remote *server* shuts down too, so `tmux attach` returns 1 having
       # printed "no server running". Treating that as an error would leave a
       # "press any key" prompt behind every ordinary exit.
+      remote="tmux new-session -A -d -s '$name' \
+        && tmux set -t '$name' status off \
+        && tmux set -t '$name' prefix C-S-a \
+        && tmux set -t '$name' detach-on-destroy on \
+        || exit 97
+      tmux attach -t '$name'
+      exit 0"
+
+      # --predict=never: these hosts are a LAN and a tailnet, where the round
+      # trip is short enough that predictive echo only shows up as underlined
+      # guesses being corrected. Roaming is what mosh is here for, not latency
+      # hiding.
       status=0
-      ssh -t \
-        -o ConnectTimeout=5 \
-        -o ServerAliveInterval=15 \
-        -o ServerAliveCountMax=3 \
+      mosh \
+        --predict=never \
+        --ssh="ssh -o ConnectTimeout=5" \
         "$dest" \
-        "tmux new-session -A -d -s '$name' \
-         && tmux set -t '$name' status off \
-         && tmux set -t '$name' prefix C-b \
-         && tmux set -t '$name' detach-on-destroy on \
-         || exit 97
-         tmux attach -t '$name'
-         exit 0" || status=$?
+        -- sh -c "$remote" || status=$?
 
       # Hold the window open on failure. Without this an unreachable host just
       # flashes the window closed, taking ssh's diagnostic with it. 255 is
@@ -138,7 +157,7 @@ let
       if [ "$status" -ne 0 ]; then
         case "$status" in
           97)  reason="remote tmux would not start or configure the session" ;;
-          255) reason="ssh could not connect, or the connection dropped" ;;
+          255) reason="could not reach the host (mosh bootstraps over ssh)" ;;
           *)   reason="exited $status" ;;
         esac
         echo >&2
@@ -181,24 +200,42 @@ in
         # The navigator binds C-h/j/k/l in the *root* table, guarded by a
         # `ps -o comm=` check on the pane's tty, and forwards the key only when
         # that command looks like vim. In a domain window the pane's command is
-        # `ssh`, so without `ssh` in the pattern the outer server would swallow
+        # `mosh-client`, so without it in the pattern the outer server would swallow
         # C-h/j/k/l and run select-pane -- meaning nvim on the far end never
         # receives them, which on a fleet where nvim is the editor is the whole
         # point of the window gone.
         #
-        # Adding `ssh` makes the outer server forward instead, and the remote's
+        # Adding it makes the outer server forward instead, and the remote's
         # own copy of this plugin then makes the real decision against the real
-        # tty. Note this applies to every ssh pane, not just domain windows:
-        # plain `ssh` panes now send those keys to the far end too, which is
-        # the consistent reading of "the keys belong to whatever is on screen".
+        # tty. `ssh` is listed too, so plain ssh panes behave the same way:
+        # those keys now go to the far end rather than moving local panes,
+        # which is the consistent reading of "the keys belong to what is on
+        # screen".
         plugin = vim-tmux-navigator;
-        extraConfig = "set -g @vim_navigator_pattern '(\\S+/)?g?\\.?(view|l?n?vim?x?|fzf|ssh)(diff)?(-wrapped)?'";
+        extraConfig = "set -g @vim_navigator_pattern '(\\S+/)?g?\\.?(view|l?n?vim?x?|fzf|ssh|mosh-client)(diff)?(-wrapped)?'";
       }
       yank
     ];
     extraConfig = ''
       # Terminal overrides
       set -ag terminal-overrides ",xterm-256color:RGB"
+
+      # Extended keys (xterm's modifyOtherKeys). Without this a terminal cannot
+      # tell C-S-a from C-a -- both are byte 0x01 -- and the domain windows'
+      # inner prefix would collide with this server's own C-a.
+      #
+      # Three links have to agree, and this file configures all of them
+      # because every machine runs it: wezterm must be asked for extended keys
+      # (the extkeys feature, which tmux does not infer from TERM=xterm-*),
+      # this server must pass them on to the pane (extended-keys on), and the
+      # inner tmux must ask for them in turn (the tmux-* feature, since its
+      # terminal is a pane on this server).
+      #
+      # `on` rather than `always`: applications opt in, so anything that does
+      # not ask -- which is most things -- keeps the encoding it has today.
+      set -s extended-keys on
+      set -as terminal-features ",xterm*:extkeys"
+      set -as terminal-features ",tmux*:extkeys"
 
       # Global options
       set-option -g focus-events on
