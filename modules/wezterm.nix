@@ -79,7 +79,16 @@ in
         return false
       end
 
-      local passthrough = detect_passthrough()
+      -- The wezterm mux is off. Everything built for it is still here and
+      -- still correct; it is just not what runs the machine. tmux is the
+      -- multiplexer again, so wezterm has to be a plain terminal -- which is
+      -- precisely what a passthrough window already is, which is why this is
+      -- one flag rather than a deletion. Flip it to true to get the mux back:
+      -- default_domain, the C-a leader, the whole tmux_keys table, the digit
+      -- and per-host spawn keys.
+      local mux_mode = false
+
+      local passthrough = (not mux_mode) or detect_passthrough()
 
       config.color_scheme = 'Sonokai (Gogh)'
       config.font = wezterm.font_with_fallback {
@@ -89,7 +98,12 @@ in
       }
       config.font_size = 11.0
 
-      -- Splits and tabs are both wezterm's now (herd grew a wezterm backend),
+      -- What follows describes mux_mode on, which it currently is not: with
+      -- the flag off wezterm takes no leader at all and every key below goes
+      -- straight to tmux. Kept as written because it is the arrangement the
+      -- flag restores.
+      --
+      -- Splits and tabs are both wezterm's then (herd grew a wezterm backend),
       -- but tmux is not retired and the two do get nested: ssh into a host and
       -- run tmux there and wezterm is the outer multiplexer, both bound to C-a.
       -- wezterm wins that, always and unconditionally -- no sniffing at what a
@@ -128,8 +142,11 @@ in
       -- wrong; 1000ms (the default) was visible as output arriving in bursts.
       -- The real fix belongs upstream -- the client's poll backoff runs to
       -- MAX_POLL_INTERVAL = 30s -- and this only narrows the window.
-      -- Costs running the update-status callback below 10x a second.
-      config.status_update_interval = 100
+      -- Costs running the update-status callback below 10x a second, which is
+      -- why it is tied to mux_mode: with the mux off no pane here is a client
+      -- pane, nothing can go stale waiting on a push, and the only thing left
+      -- paying the 10Hz tick would be a clock that changes once a minute.
+      config.status_update_interval = mux_mode and 100 or 1000
 
       -- Latency budget for a keystroke. None of this mattered under tmux,
       -- because tmux was never in the input-to-pixel path: wezterm owned a
@@ -487,6 +504,12 @@ in
         end
       end
 
+      -- Off with mux_mode, so panes are ordinary child processes again and a
+      -- pane dies with the GUI: persistence is tmux's job once more. The
+      -- domains above stay declared either way -- nothing connects to one
+      -- until something asks, so `wezterm connect <host>` remains available
+      -- deliberately without the mux being what every window lands in.
+      --
       -- Spawn into this host's mux rather than straight into a child process,
       -- so a pane survives the GUI that opened it -- the wezterm-side answer to
       -- what tmux detach/attach does, and the reason panes come back after a
@@ -987,8 +1010,10 @@ in
         window:set_right_status(wezterm.format {
           -- A passthrough window looks identical otherwise, and "why did my
           -- prefix stop working" is a bad way to find out which one this is.
+          -- Only worth saying when there is another kind of window to tell it
+          -- apart from: with mux_mode off every window is this one.
           { Foreground = { AnsiColor = 'Olive' } },
-          { Text = passthrough and 'passthrough  ' or "" },
+          { Text = (mux_mode and passthrough) and 'passthrough  ' or "" },
           { Foreground = { AnsiColor = 'Blue' } },
           { Text = window:active_workspace() .. '  ' },
           { Foreground = { AnsiColor = 'Fuchsia' } },

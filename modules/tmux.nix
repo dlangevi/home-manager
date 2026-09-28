@@ -137,9 +137,16 @@ in
       # one key for key. Nothing generates one from the other, so a binding
       # added here has to be added there by hand or the two drift apart.
       #
-      # Nested, wezterm wins: it takes C-a unconditionally, and `bind-key a
-      # send-prefix` above is what still reaches this server from inside a
-      # wezterm pane -- wezterm's LEADER a forwards the C-a that gets here.
+      # That half is switched off at the moment -- mux_mode in wezterm.nix is
+      # false, wezterm takes no leader, and C-a arrives here directly. The
+      # mirror still has to be maintained by hand, because the flag is meant
+      # to be flippable and a table that drifted while it was off would come
+      # back wrong.
+      #
+      # With mux_mode on, wezterm wins the nesting: it takes C-a
+      # unconditionally, and `bind-key a send-prefix` above is what still
+      # reaches this server from inside a wezterm pane -- wezterm's LEADER a
+      # forwards the C-a that gets here.
       bind-key - split-window -v
       bind-key \\ split-window -h
       bind-key Enter break-pane
