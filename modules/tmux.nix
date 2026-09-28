@@ -73,15 +73,15 @@ let
   # status bar, and `prefix C-b` keeps C-a arriving here, at the outer server,
   # so there is no prefix dance.
   #
-  # The inner prefix is C-S-a: the same key as this server's own prefix, aimed
-  # at the far end, which only works because extended-keys (set above) makes
-  # the two distinguishable. C-a keeps driving this server, C-S-a drives the
-  # remote one, and neither has to be escaped through the other.
+  # Nothing here sets the remote session's prefix: it keeps the C-a its own
+  # config gives it, and C-S-a reaches it via the root binding above. So C-a
+  # drives this server, C-S-a drives the remote one, and neither has to be
+  # escaped through the other.
   #
-  # It is a prefix rather than None because the inner session's copy-mode is
-  # the *only* way to read the remote's scrollback: the inner tmux owns the
-  # alternate screen, so this pane's own history stays empty. `C-S-a [` is
-  # that hatch.
+  # That matters beyond the keystroke, because the remote's prefix is also the
+  # only way to read its scrollback -- the inner tmux owns the alternate
+  # screen, so this pane's own history stays empty, and `C-S-a [` is the way
+  # into the copy-mode that does have it.
   #
   # detach-on-destroy on is not optional. The remote runs this same config,
   # which sets it off globally; without the override, exiting the remote shell
@@ -133,7 +133,6 @@ let
       # "press any key" prompt behind every ordinary exit.
       remote="tmux new-session -A -d -s '$name' \
         && tmux set -t '$name' status off \
-        && tmux set -t '$name' prefix C-S-a \
         && tmux set -t '$name' detach-on-destroy on \
         || exit 97
       tmux attach -t '$name'
@@ -220,22 +219,29 @@ in
       # Terminal overrides
       set -ag terminal-overrides ",xterm-256color:RGB"
 
-      # Extended keys (xterm's modifyOtherKeys). Without this a terminal cannot
-      # tell C-S-a from C-a -- both are byte 0x01 -- and the domain windows'
-      # inner prefix would collide with this server's own C-a.
+      # C-S-a is "the prefix, but for the far end". It is needed at all because
+      # a domain window has two tmux servers listening to one keyboard, and
+      # both answer to C-a.
       #
-      # Three links have to agree, and this file configures all of them
-      # because every machine runs it: wezterm must be asked for extended keys
-      # (the extkeys feature, which tmux does not infer from TERM=xterm-*),
-      # this server must pass them on to the pane (extended-keys on), and the
-      # inner tmux must ask for them in turn (the tmux-* feature, since its
-      # terminal is a pane on this server).
+      # The asymmetry worth understanding: only *this* server needs to tell the
+      # two keys apart. A terminal sends byte 0x01 for both C-a and C-S-a, so
+      # without extended keys (xterm's modifyOtherKeys) this server would match
+      # its own prefix and eat the keystroke -- the remote would never see it,
+      # which is why "let them both be C-a" cannot work. Hence extkeys, which
+      # tmux does not infer from TERM=xterm-*, so it has to be declared.
       #
-      # `on` rather than `always`: applications opt in, so anything that does
-      # not ask -- which is most things -- keeps the encoding it has today.
+      # What it then sends onward is a plain C-a byte, not an extended
+      # sequence. So the far end needs no configuration whatsoever: its tmux
+      # sees an ordinary C-a and matches the prefix it already had. That keeps
+      # the remote session a completely normal session -- attach to it directly
+      # from that machine and it behaves like any other -- and keeps this
+      # feature working against hosts that have not been rolled out to yet.
+      #
+      # Root table, so it needs no prefix of its own. In a local pane it just
+      # sends C-a to whatever is running there.
       set -s extended-keys on
       set -as terminal-features ",xterm*:extkeys"
-      set -as terminal-features ",tmux*:extkeys"
+      bind-key -n C-S-a send-keys C-a
 
       # Global options
       set-option -g focus-events on
