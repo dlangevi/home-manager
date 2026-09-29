@@ -60,6 +60,36 @@
         then builtins.getFlake "git+file://${herdLocal}"
         else dl-herd;
 
+      # The apply tool itself. Built from this repo so `nix run .#dlsys` works
+      # with nothing but nix and a checkout -- that is what bootstrap.sh relies
+      # on, and why home-manager is not a prerequisite for bootstrapping.
+      #
+      # cargoLock.lockFile rather than a cargoHash: adding a dependency then
+      # costs a `cargo add`, not a hand-updated sha256 that fails the build
+      # once before you learn the right value.
+      dlsysPkg = pkgs.rustPlatform.buildRustPackage {
+        pname = "dlsys";
+        version = "0.1.0";
+
+        # Only the crate, not the whole repo. With `src = ./.` every edit to
+        # any module .nix would change the derivation and rebuild dlsys --
+        # on this host and, during a rollout, on every remote host too.
+        src = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.unions [ ./Cargo.toml ./Cargo.lock ./crates ];
+        };
+        cargoLock.lockFile = ./Cargo.lock;
+
+        # dlsys shells out to all of these. Wrapping them on PATH keeps it
+        # working when invoked from a bare `nix run` on a machine whose user
+        # environment has none of them yet -- the bootstrap case.
+        nativeBuildInputs = [ pkgs.makeWrapper ];
+        postInstall = ''
+          wrapProgram $out/bin/dlsys \
+            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.git pkgs.openssh ]}
+        '';
+      };
+
       features = import ./features.nix {
         inherit plasma-manager;
         dl-herd = herdSrc;
@@ -109,11 +139,29 @@
       # Expose the home-manager CLI so the dlsys script can invoke it
       # via `nix run .#home-manager` on machines that don't have it
       # installed yet.
-      packages.${system}.home-manager =
-        home-manager.packages.${system}.home-manager;
+      packages.${system} = {
+        # Exposed so dlsys can invoke home-manager via `nix run .#home-manager`
+        # on machines that don't have it installed yet.
+        home-manager = home-manager.packages.${system}.home-manager;
+
+        # The apply tool. `nix run .#dlsys` is what bootstrap.sh execs into.
+        dlsys = dlsysPkg;
+      };
 
       devShells.${system}.default = pkgs.mkShell {
-        packages = with pkgs; [ nixfmt-rfc-style nil gh ];
+        # The Rust toolchain is here for crates/dlsys. .envrc activates this
+        # shell, so iterating is `cargo run -- switch` rather than a rebuild.
+        packages = with pkgs; [
+          nixfmt-rfc-style
+          nil
+          gh
+          cargo
+          rustc
+          rust-analyzer
+          clippy
+          rustfmt
+        ];
+        RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
       };
     };
 }

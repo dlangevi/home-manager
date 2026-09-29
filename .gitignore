@@ -5,6 +5,10 @@ log.txt
 result
 .direnv/
 
+# cargo build output for crates/dlsys. Anchored so it cannot match a
+# directory named `target` somewhere in the nix tree.
+/target
+
 # Never commit credential material. Secrets in this repo are referenced by
 # out-of-band path only (see nixos/modules/media-audio.nix, ~/.zshenv.local).
 *.env
