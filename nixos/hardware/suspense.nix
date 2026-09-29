@@ -16,6 +16,13 @@
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
 
+  # Do not bother setting boot.initrd.systemd.enable here: it is already the
+  # default on this nixpkgs, and stage 1 is demonstrably systemd -- the boot
+  # journal carries Initrd Root Device / Initrd Default Target /
+  # initrd-switch-root.service, none of which exist under the old shell
+  # script. Setting it explicitly produces a byte-identical initrd. Checked
+  # while chasing boot time; recorded so nobody re-tests it as a speedup.
+
   fileSystems."/" =
     { device = "/dev/disk/by-uuid/512871c4-6331-46d1-84b0-060c12d33472";
       fsType = "ext4";

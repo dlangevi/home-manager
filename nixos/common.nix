@@ -5,6 +5,20 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
+  # The stock 5s menu is 5s of nothing on machines that boot one OS. Measured
+  # on suspense as 3.771s of the 30.8s cold boot -- the second-largest single
+  # item after firmware POST, and the only one that is pure dead wait.
+  #
+  # 0 does not remove the menu, it removes the *countdown*: systemd-boot still
+  # opens it if a key is held during the loader window (Space is the
+  # conventional one), so rolling back to an older generation still works.
+  boot.loader.timeout = 0;
+
+  # /boot had 7 entries. Every one is a file the loader enumerates and a
+  # kernel+initrd pair occupying the 512M ESP; 5 is still several weeks of
+  # rollback depth.
+  boot.loader.systemd-boot.configurationLimit = 5;
+
   # Nix
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nix.settings.auto-optimise-store = true;
