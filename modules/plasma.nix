@@ -1,4 +1,14 @@
-# Plasma tuning. Three unrelated things live here:
+# Plasma tuning. Four unrelated things live here:
+#
+#   0. KRunner is purely D-Bus activated -- the unit plasma-workspace ships has
+#      no [Install] section at all -- so it does not exist until the first
+#      Alt+Space, and that keypress pays the whole cold start: process spawn,
+#      Qt/QML load, every runner plugin, and a ksycoca build under krunner's
+#      own XDG_DATA_DIRS. On a cold boot that is the 10+ seconds between
+#      reaching the desktop and being able to launch anything. The journal
+#      shows it plainly: the session finishes at T+3.1s, then nothing until
+#      the first query 14s later drags baloorunner and a sycoca rebuild in
+#      behind it. Start it eagerly instead (below).
 #
 #   1. Baloo was content-indexing all of $HOME with no scope restriction, which on
 #      this machine meant recursively extracting file contents across ~/storage
@@ -14,8 +24,21 @@
 #      to be named explicitly.
 #
 # Only the keys named below are written -- see overrideConfig.
-{ ... }:
+{ config, ... }:
 {
+  # Pull KRunner up to login time. plasma-workspace.target is the right anchor:
+  # it is reached once the desktop is actually up, so krunner warms in the idle
+  # moment after the session paints rather than delaying it.
+  #
+  # A .wants/ symlink rather than an [Install] drop-in, because drop-in
+  # [Install] sections do nothing until `systemctl --user enable` runs -- the
+  # symlink *is* what enabling would create. Out-of-store so it points at the
+  # stable /run/current-system path and survives every rebuild; this feature is
+  # only selected by NixOS hosts, so that path is always there.
+  xdg.configFile."systemd/user/plasma-workspace.target.wants/plasma-krunner.service".source =
+    config.lib.file.mkOutOfStoreSymlink
+      "/run/current-system/sw/share/systemd/user/plasma-krunner.service";
+
   programs.plasma = {
     enable = true;
 
