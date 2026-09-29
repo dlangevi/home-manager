@@ -298,22 +298,21 @@ in
       # one key for key. Nothing generates one from the other, so a binding
       # added here has to be added there by hand or the two drift apart.
       #
-      # That half is switched off at the moment -- mux_mode in wezterm.nix is
-      # false, wezterm takes no leader, and C-a arrives here directly. The
-      # mirror still has to be maintained by hand, because the flag is meant
-      # to be flippable and a table that drifted while it was off would come
-      # back wrong.
+      # Nested, this server wins. wezterm's bindings are per-pane: a pane whose
+      # foreground process is tmux (or ssh/mosh) has every key forwarded to it,
+      # C-a included, so inside a session these bindings are simply the live
+      # ones and wezterm's copy is unreachable. It answers in a pane at a bare
+      # shell, which is the case tmux is not in.
       #
-      # With mux_mode on, wezterm wins the nesting: it takes C-a
-      # unconditionally, and `bind-key a send-prefix` above is what still
-      # reaches this server from inside a wezterm pane -- wezterm's LEADER a
-      # forwards the C-a that gets here.
+      # So the mirror is not decoration, but it is also never consulted here:
+      # `bind-key a send-prefix` above now matters for tmux-in-tmux rather than
+      # for tmux-in-wezterm.
       #
       # prefix+C is a deliberate exception to the key-for-key mirroring, and
-      # should not be "fixed" into one: wezterm's LEADER C is ShowLauncherArgs
+      # should not be "fixed" into one: wezterm's prefix+C is ShowLauncherArgs
       # over its own ssh_domains, this one is a display-menu that opens an ssh
       # window. Same key, same intent, different mechanism -- and with
-      # mux_mode false only this one is live. The host list underneath them is
+      # mux_mode false wezterm's has no domains to offer. The host list is
       # the one part that cannot drift, because both sides now read hosts.nix.
       bind-key - split-window -v
       bind-key \\ split-window -h
