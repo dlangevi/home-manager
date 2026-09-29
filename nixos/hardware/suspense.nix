@@ -8,7 +8,10 @@
     [ (modulesPath + "/installer/scan/not-detected.nix")
     ];
 
-  boot.initrd.availableKernelModules = [ "xhci_pci" "ahci" "usbhid" "usb_storage" "sd_mod" ];
+  # "nvme" is not optional here: /nix lives on nvme0n1p1 (see below) and
+  # stage 1 has to mount it before switch-root. Without the driver in the
+  # initrd the boot drops to an emergency shell.
+  boot.initrd.availableKernelModules = [ "xhci_pci" "ahci" "usbhid" "usb_storage" "sd_mod" "nvme" ];
   boot.initrd.kernelModules = [ ];
   boot.kernelModules = [ "kvm-amd" ];
   boot.extraModulePackages = [ ];
@@ -22,6 +25,27 @@
     { device = "/dev/disk/by-uuid/B623-38FF";
       fsType = "vfat";
       options = [ "fmask=0022" "dmask=0022" ];
+    };
+
+  # The Nix store on its own filesystem, on the 238G NVMe in the board's M.2
+  # slot. The store is ~2.9M small files and nix's own workloads (eval,
+  # builds, GC) are almost pure small random reads -- the one thing SATA is
+  # worst at and this drive is best at. Everything else stayed on the SATA
+  # SSDs: /home is 240G and would not fit, and the rest of / is ~5G of cold
+  # config and append-only logs, so moving it would buy nothing.
+  #
+  # The drive is a DRAM-less MAXIO controller (PCI 0x1e4b) but Host Memory
+  # Buffer is active, so the FTL map lives in RAM and random reads do not pay
+  # the usual DRAM-less penalty.
+  #
+  # neededForBoot is already implied -- lib/utils.nix treats /nix as
+  # needed-for-boot unconditionally -- but stating it means the next reader
+  # does not have to know that.
+  fileSystems."/nix" =
+    { device = "/dev/disk/by-uuid/50e381b3-99f0-457e-866a-d74be13b7685";
+      fsType = "ext4";
+      options = [ "noatime" ];
+      neededForBoot = true;
     };
 
   fileSystems."/home/dlangevi/storage" =
