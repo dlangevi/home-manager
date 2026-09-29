@@ -93,20 +93,29 @@
   hardware.graphics.enable = true;
   services.xserver.videoDrivers = [ "nvidia" ];
 
-  # Load the driver in stage 1 rather than letting systemd-modules-load do it
-  # in stage 2. Measured: systemd-modules-load is 4.275s of a 6.081s userspace
-  # and sits on the critical chain -- firewall, NetworkManager, tailscaled and
-  # sddm all queue behind nvidia_modeset (~3s) and nvidia_drm (~2s).
+  # Tried and reverted: boot.initrd.kernelModules = [ "nvidia" "nvidia_modeset"
+  # "nvidia_uvm" "nvidia_drm" ], to get the driver off the stage-2 critical
+  # chain (the nvidia inserts are what make systemd-modules-load 4.3s, and
+  # everything from the firewall to sddm is ordered behind it).
   #
-  # The usual objection is that this relocates GPU init rather than removing
-  # it. Here there is real slack to hide it in: the initrd spends 1.73s just
-  # waiting for the SATA root disk to enumerate (NVMe appears at 1.43s, sda not
-  # until 3.17s), and module insertion can run inside that window.
+  # It does buy userspace time -- 6.081s -> 2.931s, against initrd 4.200s ->
+  # 5.318s -- but it drags the nvidia modules and their GSP firmware into the
+  # initrd, which goes from 27 MB to 198 MB. Two consequences kill it:
   #
-  # Verify with `systemd-analyze` after a reboot. If initrd grows by as much as
-  # userspace shrinks, the slack was not there -- revert this and say so here
-  # rather than leaving the next reader to re-test it.
-  boot.initrd.kernelModules = [ "nvidia" "nvidia_modeset" "nvidia_uvm" "nvidia_drm" ];
+  #   * /boot is a 511 MB ESP. At ~198 MB per generation, configurationLimit =
+  #     5 wants ~1 GB. nixos-rebuild runs out of space within a couple of
+  #     generations -- this is a hard breakage, not a slowdown.
+  #   * the loader has to pull those 198 MB off vfat on the SATA disk through
+  #     UEFI before the kernel starts, which is most of why `loader` stayed at
+  #     2.168s with timeout already at 0.
+  #
+  # Net wall clock came out roughly even once the loader cost is counted, for
+  # a bricked-rebuild risk. Not worth it. If this is retried, the thing that
+  # would actually work is loading nvidia from a unit ordered only before
+  # display-manager, so it runs *concurrently* with the rest of userspace
+  # instead of blocking sysinit.target -- no initrd growth, same effect. That
+  # needs overriding boot.kernelModules, which the nvidia module sets at
+  # nixos/modules/hardware/video/nvidia.nix:820.
 
   hardware.nvidia = {
     modesetting.enable = true;

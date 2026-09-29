@@ -55,9 +55,17 @@
       neededForBoot = true;
     };
 
+  # nofail is about boot ordering, not about tolerating a missing disk. Without
+  # it this mount is Before=local-fs.target, so it became the head of the
+  # critical chain once nvidia stopped being: fsck at 1.610s -> mount at 1.908s
+  # -> local-fs.target -> sysinit -> NetworkManager -> graphical.target. A
+  # bulk data disk has no business gating the login screen. nofail drops both
+  # the requirement and that ordering, so it mounts alongside the rest of boot
+  # instead of in front of it.
   fileSystems."/home/dlangevi/storage" =
     { device = "/dev/disk/by-uuid/8ac0fb0f-0c0b-4f90-9227-f04267dd22ba";
       fsType = "ext4";
+      options = [ "nofail" "x-systemd.device-timeout=10s" ];
     };
 
   # sda3 -- a 17G swap partition that has existed (formatted, labelled "swap")
