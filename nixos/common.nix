@@ -17,7 +17,7 @@
   # /boot had 7 entries. Every one is a file the loader enumerates and a
   # kernel+initrd pair occupying the 512M ESP; 5 is still several weeks of
   # rollback depth.
-  boot.loader.systemd-boot.configurationLimit = 5;
+  boot.loader.systemd-boot.configurationLimit = lib.mkDefault 5;
 
   # Nix
   nix.settings.experimental-features = [ "nix-command" "flakes" ];

@@ -28,8 +28,20 @@
       fsType = "ext4";
     };
 
+  # The 1000M ESP on the second SATA disk, not the 512M one this install
+  # started on. 512M cannot hold even two generations once the nvidia modules
+  # are in the initrd (~190 MiB each), which is the whole reason for the move.
+  #
+  # The old 512M ESP (UUID B623-38FF, PARTUUID bf10756a-...) is still on disk,
+  # still has its NVRAM entry, and still has the generations that were current
+  # when this switched. Left deliberately as the recovery path -- F11 at POST
+  # picks it. Reformat it only once this one has proven itself.
+  #
+  # Note the device names on this box are not stable: the live /boot has been
+  # both sda1 and sdb1 across consecutive boots. Always identify these two
+  # partitions by UUID or PARTUUID, never by /dev/sdX.
   fileSystems."/boot" =
-    { device = "/dev/disk/by-uuid/B623-38FF";
+    { device = "/dev/disk/by-uuid/FA92-7527";
       fsType = "vfat";
       options = [ "fmask=0022" "dmask=0022" ];
     };

@@ -73,29 +73,31 @@
   hardware.graphics.enable = true;
   services.xserver.videoDrivers = [ "nvidia" ];
 
-  # Tried and reverted: boot.initrd.kernelModules = [ "nvidia" "nvidia_modeset"
-  # "nvidia_uvm" "nvidia_drm" ], to get the driver off the stage-2 critical
-  # chain (the nvidia inserts are what make systemd-modules-load 4.3s, and
-  # everything from the firewall to sddm is ordered behind it).
+  # Load the driver in stage 1 rather than letting systemd-modules-load do it
+  # in stage 2. Without this, inserting nvidia/nvidia_modeset/nvidia_drm makes
+  # systemd-modules-load 4.3s of a 6.1s userspace, and it sits on the critical
+  # chain -- firewall, NetworkManager, tailscaled and sddm all queue behind it.
+  # Measured with it on: userspace 6.07s -> 2.93s, graphical.target 6.1s ->
+  # 2.9s, so the login prompt arrives ~3s sooner. initrd grows ~1.1s, which is
+  # less than it costs because stage 1 already idles waiting for SATA.
   #
-  # It does buy userspace time -- 6.081s -> 2.931s, against initrd 4.200s ->
-  # 5.318s -- but it drags the nvidia modules and their GSP firmware into the
-  # initrd, which goes from 27 MB to 198 MB. Two consequences kill it:
+  # This was tried once before and backed out: it takes the initrd from 27 MB
+  # to 190 MiB, which did not fit the 512M ESP this install started on. /boot
+  # now lives on the 1000M ESP (see ../hardware/suspense.nix) specifically so
+  # this can stay. Do not put /boot back on the small partition without also
+  # reverting this line.
+  boot.initrd.kernelModules = [ "nvidia" "nvidia_modeset" "nvidia_uvm" "nvidia_drm" ];
+
+  # Three, not the five common.nix sets, and the reason is arithmetic rather
+  # than taste. Each generation costs ~188.6 MiB of initrd (measured) plus a
+  # ~12.9 MiB kernel shared between generations on the same kernel, against
+  # ~952 MiB usable. A rebuild transiently holds limit+1 generations, so:
   #
-  #   * /boot is a 511 MB ESP. At ~198 MB per generation, configurationLimit =
-  #     5 wants ~1 GB. nixos-rebuild runs out of space within a couple of
-  #     generations -- this is a hard breakage, not a slowdown.
-  #   * the loader has to pull those 198 MB off vfat on the SATA disk through
-  #     UEFI before the kernel starts, which is most of why `loader` stayed at
-  #     2.168s with timeout already at 0.
+  #   limit 3 -> steady 579 MiB, peak 767 MiB   <- fits, ~185 MiB spare
+  #   limit 4 -> steady 767 MiB, peak 956 MiB   <- overflows during the rebuild
   #
-  # Net wall clock came out roughly even once the loader cost is counted, for
-  # a bricked-rebuild risk. Not worth it. If this is retried, the thing that
-  # would actually work is loading nvidia from a unit ordered only before
-  # display-manager, so it runs *concurrently* with the rest of userspace
-  # instead of blocking sysinit.target -- no initrd growth, same effect. That
-  # needs overriding boot.kernelModules, which the nvidia module sets at
-  # nixos/modules/hardware/video/nvidia.nix:820.
+  # Raise this only if the initrd shrinks or the ESP grows.
+  boot.loader.systemd-boot.configurationLimit = 3;
 
   hardware.nvidia = {
     modesetting.enable = true;
