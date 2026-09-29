@@ -6,8 +6,11 @@ feature catalog. Machines are registered in `machines.nix`; features live in
 
 ## 0. Applying changes
 
-`dlsys` is on PATH (symlinked into `~/.local/bin` by `modules/base.nix`), so
-it runs from any directory. Aliases cover the three forced targets.
+`dlsys` is a Rust program in `crates/dlsys`, installed on PATH as a package by
+`modules/base.nix`, so it runs from any directory. It finds this repo by
+convention — `$DLSYS_FLAKE` if set, otherwise `~/.config/home-manager` —
+rather than from its own location, so where you invoke it from does not
+matter. Aliases cover the three forced targets.
 
 | Command        | Runs                    | Use when |
 |----------------|-------------------------|----------|
@@ -20,8 +23,8 @@ Bare `dlsys switch` is target `auto`: it builds both layers, compares each
 against what is live, and switches only what moved — so it is the right
 suggestion when you are unsure, and it will not prompt for sudo on a
 home-manager-only change. The aliases are defined in `modules/zsh.nix` under
-`shellAliases`; if you rename one there, fix this table and `usage()` in
-`dlsys` too.
+`shellAliases`; if you rename one there, fix this table and the clap
+`about`/doc comments in `crates/dlsys/src/main.rs` too.
 
 Prefer `dlsys switch` by default. Reach for an explicit target only when
 re-running activation is the point (restart a unit, re-link a generation),
@@ -30,6 +33,23 @@ since `auto` correctly does nothing when the built output already matches.
 `dlsys rollout` is a different thing — it runs `switch auto` on *every
 managed machine* over ssh, not just this one. Never suggest it when the user asked to apply a
 local change.
+
+### When dlsys itself is broken
+
+Because dlsys is now a package this flake builds, a commit that breaks it
+also breaks the tool you would use to fix it. Three escape hatches, in
+increasing order of desperation — none of them need a working `dlsys` on
+PATH:
+
+```sh
+./bootstrap.sh switch                     # runs dlsys from source via `nix run`
+nix run "path:.?rev=<good-sha>#dlsys" -- switch   # a known-good revision
+nix run .#home-manager -- switch --impure --flake ".#$(hostname)"  # skip dlsys entirely
+```
+
+`bootstrap.sh` is the first thing to reach for: it is plain bash, needs only
+nix and this checkout, and is also what `rollout` invokes on remote hosts for
+exactly this reason — a remote may not have the current binary yet.
 
 ## 1. NixOS vs home-manager
 

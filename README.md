@@ -62,11 +62,18 @@ cd ~/.config/home-manager
 ### 4. Register this machine and apply
 
 ```bash
-./dlsys init
+./bootstrap.sh init
 ```
 
-(Explicitly `./dlsys` here — the `~/.local/bin/dlsys` symlink that puts it on
-PATH is created by the first `home-manager switch`, which `init` runs.)
+(`./bootstrap.sh` here, not `dlsys` — `dlsys` is a package this flake builds
+and it is not on PATH until the first `home-manager switch`, which `init`
+runs. bootstrap.sh needs only nix and this checkout: it builds dlsys with
+`nix run` and execs into it. It will also offer to install Nix itself if the
+machine has none, so step 1 below is optional if you start here.)
+
+After that first switch, `dlsys` is on PATH and you can call it directly.
+`bootstrap.sh` stays useful for two cases: a fresh machine, and recovering
+from a commit that breaks dlsys.
 
 `init` will:
 

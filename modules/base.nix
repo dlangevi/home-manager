@@ -1,4 +1,4 @@
-{ config, pkgs, username, homeDirectory, ... }:
+{ config, pkgs, username, homeDirectory, dlsys, ... }:
 
 {
   imports = [
@@ -19,19 +19,22 @@
 
   programs.home-manager.enable = true;
 
-  # dlsys on PATH ($HOME/.local/bin is added in zsh.nix). An out-of-store
-  # symlink rather than a copy into the store: the script resolves its own
-  # path and cds there, and it has to land in the repo working tree -- a
-  # store copy would cd into /nix/store, where there is no flake.nix or git.
-  home.file.".local/bin/dlsys".source =
-    config.lib.file.mkOutOfStoreSymlink "${homeDirectory}/.config/home-manager/dlsys";
+  # dlsys is a normal store package now (crates/dlsys), not an out-of-store
+  # symlink into the working tree. The symlink existed because the bash
+  # script resolved its own path and cd'd there, so a store copy would have
+  # landed in /nix/store where there is no flake.nix or git. The Rust binary
+  # finds the repo by convention instead -- DLSYS_FLAKE, else
+  # ~/.config/home-manager -- which removes that constraint.
+  #
+  # If dlsys is ever broken or missing, ./bootstrap.sh in the repo still
+  # works: it needs only nix and execs `nix run .#dlsys`.
 
   programs.direnv = {
     enable = true;
     nix-direnv.enable = true;
   };
 
-  home.packages = with pkgs; [
+  home.packages = [ dlsys ] ++ (with pkgs; [
     ripgrep
     fd
     bat
@@ -48,5 +51,5 @@
     cntr
     jq
     mosh
-  ];
+  ]);
 }

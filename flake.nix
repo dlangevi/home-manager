@@ -126,7 +126,10 @@
       mkHome = hostname: featureNames: home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
         modules = builtins.concatMap (name: features.${name}) featureNames;
-        extraSpecialArgs = { inherit username homeDirectory hostname; };
+        extraSpecialArgs = {
+          inherit username homeDirectory hostname;
+          dlsys = dlsysPkg;
+        };
       };
     in
     {
