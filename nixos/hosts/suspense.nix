@@ -73,31 +73,62 @@
   hardware.graphics.enable = true;
   services.xserver.videoDrivers = [ "nvidia" ];
 
-  # Load the driver in stage 1 rather than letting systemd-modules-load do it
-  # in stage 2. Without this, inserting nvidia/nvidia_modeset/nvidia_drm makes
-  # systemd-modules-load 4.3s of a 6.1s userspace, and it sits on the critical
-  # chain -- firewall, NetworkManager, tailscaled and sddm all queue behind it.
-  # Measured with it on: userspace 6.07s -> 2.93s, graphical.target 6.1s ->
-  # 2.9s, so the login prompt arrives ~3s sooner. initrd grows ~1.1s, which is
-  # less than it costs because stage 1 already idles waiting for SATA.
+  # nvidia's module load is ~4.3s and it used to sit on the critical chain:
+  # the nvidia entries land in boot.kernelModules (set by the nvidia module at
+  # nixos/modules/hardware/video/nvidia.nix:820), which becomes
+  # /etc/modules-load.d/nixos.conf, which systemd-modules-load.service reads --
+  # and that unit is Before=sysinit.target, so the firewall, NetworkManager,
+  # tailscaled and sddm all queued behind a GPU coming up.
   #
-  # This was tried once before and backed out: it takes the initrd from 27 MB
-  # to 190 MiB, which did not fit the 512M ESP this install started on. /boot
-  # now lives on the 1000M ESP (see ../hardware/suspense.nix) specifically so
-  # this can stay. Do not put /boot back on the small partition without also
-  # reverting this line.
-  boot.initrd.kernelModules = [ "nvidia" "nvidia_modeset" "nvidia_uvm" "nvidia_drm" ];
+  # Fix: take nvidia out of that file and load it from the unit below, which
+  # runs concurrently with the rest of userspace and gates only the display
+  # manager, the one thing that actually needs the driver.
+  #
+  # The filter reads config.boot.kernelModules rather than hardcoding a
+  # replacement list -- no recursion, because this defines environment.etc and
+  # not boot.kernelModules -- so any module another NixOS module contributes
+  # later still flows through. mkForce is needed because kernel.nix already
+  # defines this file. The modules themselves stay in the module tree (they
+  # come from extraModulePackages), so modprobe still finds them.
+  environment.etc."modules-load.d/nixos.conf".source = lib.mkForce (
+    pkgs.writeText "nixos.conf" (
+      lib.concatStringsSep "\n"
+        (lib.filter (m: !(lib.hasPrefix "nvidia" m)) config.boot.kernelModules)
+      + "\n"
+    )
+  );
 
-  # Three, not the five common.nix sets, and the reason is arithmetic rather
-  # than taste. Each generation costs ~188.6 MiB of initrd (measured) plus a
-  # ~12.9 MiB kernel shared between generations on the same kernel, against
-  # ~952 MiB usable. A rebuild transiently holds limit+1 generations, so:
+  systemd.services.nvidia-modules = {
+    description = "Load the NVIDIA kernel modules off the sysinit critical path";
+    # DefaultDependencies=no is the load-bearing part: it drops the implicit
+    # Before=sysinit.target that makes systemd-modules-load a boot barrier.
+    # wantedBy sysinit.target still pulls it in at the very start, so it runs
+    # alongside everything else rather than in front of it.
+    unitConfig.DefaultDependencies = false;
+    wantedBy = [ "sysinit.target" ];
+    after = [ "systemd-modules-load.service" ];
+    before = [ "display-manager.service" "shutdown.target" ];
+    conflicts = [ "shutdown.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${pkgs.kmod}/bin/modprobe -a nvidia nvidia_modeset nvidia_uvm nvidia_drm";
+    };
+  };
+
+  # Do not put these in boot.initrd.kernelModules. Measured twice: it takes
+  # the initrd from 27 MB to 188.6 MiB, and that costs ~3.1s of firmware time
+  # and ~1.6s of loader time to save ~3.15s of userspace -- about 3s net worse
+  # to reach graphical.target.
   #
-  #   limit 3 -> steady 579 MiB, peak 767 MiB   <- fits, ~185 MiB spare
-  #   limit 4 -> steady 767 MiB, peak 956 MiB   <- overflows during the rebuild
+  # The firmware penalty is the counterintuitive part and it is real: two runs
+  # with a ~190 MiB initrd measured 12.652s and 12.559s of firmware on two
+  # *different* physical disks, while two runs with a 27 MB initrd measured
+  # 9.444s and 9.521s. The clustering is far tighter than the run-to-run
+  # noise, so it tracks initrd size rather than which disk holds the ESP.
   #
-  # Raise this only if the initrd shrinks or the ESP grows.
-  boot.loader.systemd-boot.configurationLimit = 3;
+  # configurationLimit is likewise back to the common.nix default of 5: the
+  # override to 3 only existed because 188.6 MiB generations did not fit.
 
   hardware.nvidia = {
     modesetting.enable = true;
