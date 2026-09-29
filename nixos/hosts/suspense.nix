@@ -342,7 +342,25 @@
       [ "$iface" = tailscale0 ] && exit 0
 
       ts=${config.services.tailscale.package}/bin/tailscale
-      # Only meaningful once the daemon is up and actually handling DNS.
+
+      # Wait for the daemon rather than giving up on it. Bailing out here is
+      # what re-broke boot DNS once nvidia stopped serialising early boot:
+      # NetworkManager now reaches its up / dhcp4-change events ~5s before
+      # tailscaled leaves Starting, so the old `|| exit 0` skipped the resync
+      # on every boot event and DNS stayed dead until an unrelated DHCP renew
+      # tripped it ~57s later.
+      #
+      # Only wait while tailscaled.service is actually active -- if it is
+      # stopped or masked on purpose, give up immediately rather than making
+      # every NM event pay the timeout. 20s covers the observed ~5s gap with
+      # room to spare.
+      for _ in $(${pkgs.coreutils}/bin/seq 40); do
+        ${pkgs.systemd}/bin/systemctl is-active --quiet tailscaled.service || exit 0
+        "$ts" status --json 2>/dev/null \
+          | ${pkgs.gnugrep}/bin/grep -q '"BackendState": *"Running"' && break
+        ${pkgs.coreutils}/bin/sleep 0.5
+      done
+      # Still not Running after the wait -- nothing useful to re-apply.
       "$ts" status --json 2>/dev/null \
         | ${pkgs.gnugrep}/bin/grep -q '"BackendState": *"Running"' || exit 0
       "$ts" debug prefs 2>/dev/null \
