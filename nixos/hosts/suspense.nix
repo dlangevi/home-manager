@@ -93,6 +93,21 @@
   hardware.graphics.enable = true;
   services.xserver.videoDrivers = [ "nvidia" ];
 
+  # Load the driver in stage 1 rather than letting systemd-modules-load do it
+  # in stage 2. Measured: systemd-modules-load is 4.275s of a 6.081s userspace
+  # and sits on the critical chain -- firewall, NetworkManager, tailscaled and
+  # sddm all queue behind nvidia_modeset (~3s) and nvidia_drm (~2s).
+  #
+  # The usual objection is that this relocates GPU init rather than removing
+  # it. Here there is real slack to hide it in: the initrd spends 1.73s just
+  # waiting for the SATA root disk to enumerate (NVMe appears at 1.43s, sda not
+  # until 3.17s), and module insertion can run inside that window.
+  #
+  # Verify with `systemd-analyze` after a reboot. If initrd grows by as much as
+  # userspace shrinks, the slack was not there -- revert this and say so here
+  # rather than leaving the next reader to re-test it.
+  boot.initrd.kernelModules = [ "nvidia" "nvidia_modeset" "nvidia_uvm" "nvidia_drm" ];
+
   hardware.nvidia = {
     modesetting.enable = true;
 
