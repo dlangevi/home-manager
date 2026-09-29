@@ -194,6 +194,11 @@
   services.ollama.enable = false;
 
   environment.systemPackages = with pkgs; [
+    # This box has two EFI System Partitions -- the live 1000M one and the
+    # 512M original kept as a recovery path -- so which one the firmware
+    # actually picks is a question that now comes up. bootctl reports the ESP
+    # it booted from but will not show or reorder the NVRAM BootOrder.
+    efibootmgr
     steam-run
     kdePackages.partitionmanager
     gparted
