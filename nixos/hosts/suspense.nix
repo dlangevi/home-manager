@@ -106,7 +106,12 @@
     # alongside everything else rather than in front of it.
     unitConfig.DefaultDependencies = false;
     wantedBy = [ "sysinit.target" ];
-    after = [ "systemd-modules-load.service" ];
+    # No After= on systemd-modules-load: nvidia needs nothing that unit loads,
+    # and ordering behind it cost 1.09s of pure waiting (measured -- the unit
+    # finished at 1.089s and this one started at 1.094s). /nix is mounted in
+    # the initrd and the module tree is in place before stage 2 starts, so
+    # there is nothing left to wait for. kmod takes its own lock, so racing
+    # udev's coldplug is safe.
     before = [ "display-manager.service" "shutdown.target" ];
     conflicts = [ "shutdown.target" ];
     serviceConfig = {
