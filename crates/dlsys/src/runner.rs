@@ -10,9 +10,7 @@ use anyhow::{anyhow, Result};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-// Only FakeRunner needs these, and it is test-only.
-#[cfg(test)]
-use std::collections::VecDeque;
+// Only FakeRunner needs this, and it is test-only.
 #[cfg(test)]
 use std::sync::Mutex;
 
@@ -65,25 +63,37 @@ impl Runner for RealRunner {
 
 /// Records what was asked of it and replays canned answers.
 ///
-/// Answers are consumed in order. An empty queue means "succeeded, printed
-/// nothing", which keeps tests that only care about *which* commands ran from
-/// having to enumerate output for all of them.
+/// Answers are matched by substring against the rendered command line, NOT
+/// consumed in order. `switch` builds both layers on two threads, so a queue
+/// would hand whichever thread got there first the other's answer and the
+/// test would pass or fail depending on scheduling.
+///
+/// An unmatched command returns "succeeded, printed nothing", so a test only
+/// has to name the commands whose output it actually cares about.
 #[cfg(test)]
 pub struct FakeRunner {
     calls: Mutex<Vec<String>>,
-    answers: Mutex<VecDeque<Output>>,
+    answers: Vec<(String, Output)>,
 }
 
 #[cfg(test)]
 impl FakeRunner {
-    pub fn new(answers: Vec<Output>) -> Self {
+    /// Each `(pattern, output)` matches any command line containing `pattern`.
+    /// First match wins.
+    pub fn new(answers: &[(&str, Output)]) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
-            answers: Mutex::new(answers.into()),
+            answers: answers
+                .iter()
+                .map(|(p, o)| (p.to_string(), o.clone()))
+                .collect(),
         }
     }
 
-    /// Every command run so far, as `"program arg arg"`, in order.
+    /// Every command run so far, as `"program arg arg"`.
+    ///
+    /// Order is only meaningful for sequential phases -- the two builds in
+    /// `switch` race, so assert on membership, not position.
     pub fn calls(&self) -> Vec<String> {
         self.calls.lock().unwrap().clone()
     }
@@ -94,15 +104,36 @@ impl FakeRunner {
             line.push(' ');
             line.push_str(a);
         }
-        self.calls.lock().unwrap().push(line);
-        self.answers
-            .lock()
-            .unwrap()
-            .pop_front()
+        let answer = self
+            .answers
+            .iter()
+            .find(|(pat, _)| line.contains(pat.as_str()))
+            .map(|(_, o)| o.clone())
             .unwrap_or(Output {
                 ok: true,
                 stdout: String::new(),
-            })
+            });
+        self.calls.lock().unwrap().push(line);
+        answer
+    }
+}
+
+#[cfg(test)]
+impl Output {
+    /// Succeeded, with this on stdout.
+    pub fn out(s: &str) -> Self {
+        Output {
+            ok: true,
+            stdout: s.to_string(),
+        }
+    }
+
+    /// Failed, with nothing on stdout.
+    pub fn fail() -> Self {
+        Output {
+            ok: false,
+            stdout: String::new(),
+        }
     }
 }
 

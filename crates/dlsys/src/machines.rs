@@ -141,11 +141,15 @@ fn features_str(features: &[String]) -> String {
     features.iter().map(|f| format!("\"{f}\" ")).collect()
 }
 
-/// Render a whole `machines.nix` from scratch.
+/// Render a whole `machines.nix` from scratch, the way
+/// `scripts/machines-write.nix` does.
 ///
-/// Only for the case where the file does not exist yet. For an existing file
-/// use [`insert_host`], which does not discard comments or alignment.
-/// Kept byte-identical to `scripts/machines-write.nix` (golden test below).
+/// Test-only, and kept only as the oracle for the golden test below: it is
+/// what the legacy nix formatter produces, so comparing against it is how we
+/// know [`insert_host`] emits entries in the established format. Nothing in
+/// production regenerates the file -- doing so is precisely the behaviour
+/// that loses comments and alignment.
+#[cfg(test)]
 pub fn render(machines: &Machines) -> String {
     let mut s = String::from("{\n");
     for (host, features) in machines {
@@ -287,6 +291,17 @@ mod tests {
                 "expected exactly one entry for {h} in:\n{got}"
             );
         }
+    }
+
+    /// The entry `insert_host` writes must be formatted exactly the way the
+    /// legacy nix formatter would have written it -- same quoting, same
+    /// spacing, same trailing space before `]`. Otherwise registering a new
+    /// machine would introduce a second style into the file.
+    #[test]
+    fn inserted_entry_matches_the_legacy_format() {
+        let got = insert_host("{\n}\n", "dusk", &feats(&["base", "gaming"]));
+        let legacy = render(&m(&[("dusk", &["base", "gaming"])]));
+        assert_eq!(got, legacy);
     }
 
     #[test]
