@@ -106,12 +106,21 @@
     # alongside everything else rather than in front of it.
     unitConfig.DefaultDependencies = false;
     wantedBy = [ "sysinit.target" ];
-    # No After= on systemd-modules-load: nvidia needs nothing that unit loads,
-    # and ordering behind it cost 1.09s of pure waiting (measured -- the unit
-    # finished at 1.089s and this one started at 1.094s). /nix is mounted in
-    # the initrd and the module tree is in place before stage 2 starts, so
-    # there is nothing left to wait for. kmod takes its own lock, so racing
-    # udev's coldplug is safe.
+    # No After= on systemd-modules-load: nvidia needs nothing that unit loads.
+    # Worth only ~144ms though (start moved 1.094s -> 0.950s), not the ~0.8s
+    # first guessed -- that guess assumed a unit could start at ~0.3s, and
+    # none can. Every early unit on this box starts within 60ms of the same
+    # instant: nvidia-modules at 5771ms monotonic, journald 5774, modules-load
+    # 5776, udevd 5832. nvidia-modules is now literally the first unit systemd
+    # starts. The ~950ms before that is PID 1's own generator and unit-loading
+    # phase, which is the floor.
+    #
+    # So userspace is now 0.95s systemd init + 3.9s nvidia + 0.03s
+    # display-manager, and there is nothing left to reorder. The only
+    # remaining lever is making the driver itself initialise faster -- the
+    # untested idea is NVreg_EnableGpuFirmware=0 via boot.extraModprobeConfig,
+    # since most of nvidia.ko's ~3s is the GSP firmware upload and Turing can
+    # run without it.
     before = [ "display-manager.service" "shutdown.target" ];
     conflicts = [ "shutdown.target" ];
     serviceConfig = {
