@@ -70,12 +70,45 @@ fn git(runner: &dyn Runner, dir: &Path, args: &[&str]) -> Result<String> {
     Ok(runner.capture("git", args, dir)?.stdout)
 }
 
+/// What counts as "dirty".
+///
+/// The bash version was asymmetric here and this preserves that, because the
+/// asymmetry is defensible: flakes only ever build *tracked* files, so an
+/// untracked file cannot change what gets deployed.
+///
+///   * This repo -- tracked changes only. Refusing over an untracked stray
+///     would block every rollout for a file that cannot affect the build.
+///   * Tool repos -- any untracked file too. Stricter on purpose: an
+///     untracked source file in dl-herd is almost certainly work in progress
+///     that the author believes is being deployed, and it is not.
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum Dirt {
+    TrackedOnly,
+    IncludeUntracked,
+}
+
+fn is_dirty(runner: &dyn Runner, dir: &Path, dirt: Dirt) -> Result<String> {
+    match dirt {
+        Dirt::IncludeUntracked => git(runner, dir, &["status", "--porcelain"]),
+        Dirt::TrackedOnly => {
+            // `git diff --quiet` exits non-zero when there are differences.
+            let unstaged = !runner.capture("git", &["diff", "--quiet"], dir)?.ok;
+            let staged = !runner.capture("git", &["diff", "--cached", "--quiet"], dir)?.ok;
+            Ok(if unstaged || staged {
+                "tracked changes".to_string()
+            } else {
+                String::new()
+            })
+        }
+    }
+}
+
 /// Gather the git facts, then hand them to [`classify`].
 ///
 /// Every verdict goes through `classify` so the tests covering it are
 /// testing what actually runs, rather than a parallel reimplementation.
-fn inspect(runner: &dyn Runner, dir: &Path) -> Result<RepoState> {
-    let porcelain = git(runner, dir, &["status", "--porcelain"])?;
+fn inspect(runner: &dyn Runner, dir: &Path, dirt: Dirt) -> Result<RepoState> {
+    let porcelain = is_dirty(runner, dir, dirt)?;
     if !porcelain.trim().is_empty() {
         // Return early rather than fetching: a dirty tree is refused
         // regardless of what origin says, and `git fetch` is the slow part.
@@ -115,7 +148,7 @@ fn inspect(runner: &dyn Runner, dir: &Path) -> Result<RepoState> {
 /// This checkout must be clean and match upstream: remote hosts upgrade from
 /// the pushed commit, not from what is sitting here.
 pub fn require_clean_repo(runner: &dyn Runner, dir: &Path) -> Result<()> {
-    match inspect(runner, dir)? {
+    match inspect(runner, dir, Dirt::TrackedOnly)? {
         RepoState::Clean => Ok(()),
         RepoState::Dirty => Err(anyhow!(
             "Working tree has uncommitted changes. Commit or stash them first --\n\
@@ -142,7 +175,7 @@ pub fn check_tool_repos(runner: &dyn Runner, dir: &Path, prompt: &dyn Prompt) ->
         }
         println!("==> checking {name} ({path})");
 
-        match inspect(runner, repo)? {
+        match inspect(runner, repo, Dirt::IncludeUntracked)? {
             RepoState::Clean => continue,
             RepoState::Dirty => {
                 return Err(anyhow!(
@@ -325,11 +358,41 @@ mod tests {
 
     #[test]
     fn require_clean_repo_refuses_a_dirty_tree() {
-        let f = FakeRunner::new(&[("status --porcelain", Output::out(" M modules/base.nix"))]);
+        // Tracked change -> `git diff --quiet` exits non-zero.
+        let f = FakeRunner::new(&[("diff --quiet", Output::fail())]);
         let err = require_clean_repo(&f, &PathBuf::from("/repo")).unwrap_err().to_string();
         assert!(err.contains("uncommitted changes"), "{err}");
         // It must not have gone on to fetch or compare.
         assert!(!f.calls().iter().any(|c| c.contains("fetch")), "{:?}", f.calls());
+    }
+
+    /// This repo ignores untracked files, matching the bash version. Flakes
+    /// only build tracked files, so a stray untracked file cannot change
+    /// what is deployed -- refusing over one would block every rollout.
+    #[test]
+    fn require_clean_repo_ignores_untracked_files() {
+        let f = FakeRunner::new(&[
+            // Both diffs clean; only `status --porcelain` would show the stray.
+            ("diff --quiet", Output::out("")),
+            ("status --porcelain", Output::out("?? stray.log")),
+            ("rev-parse --verify", Output::out("same")),
+            ("rev-parse HEAD", Output::out("same")),
+        ]);
+        require_clean_repo(&f, &PathBuf::from("/repo")).unwrap();
+    }
+
+    /// Tool repos are stricter, also matching the bash version: an untracked
+    /// source file there is work the author probably thinks is deploying.
+    #[test]
+    fn tool_repos_do_not_ignore_untracked_files() {
+        if !Path::new(TOOL_REPOS[0].1).join(".git").exists() {
+            return;
+        }
+        let f = FakeRunner::new(&[("status --porcelain", Output::out("?? src/new.rs"))]);
+        let err = check_tool_repos(&f, &PathBuf::from("/repo"), &Always(true))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("uncommitted changes"), "{err}");
     }
 
     #[test]
