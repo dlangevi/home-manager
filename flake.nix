@@ -41,10 +41,23 @@
       # Caveat: the local flake brings its own nixpkgs (its lock pins
       # nixos-unstable), so `inputs.dl-herd.inputs.nixpkgs.follows` does not
       # apply in this branch and herd gets rebuilt against that pin.
+      #
+      # `git+file://`, not `path:`. `path:` copies the directory verbatim and
+      # ignores .gitignore, so every switch hauled the whole working tree into
+      # the store -- 4.2G measured on suspense (a 2.2G cargo target/ plus 1.6G
+      # of .claude transcripts) against 664K of actually-tracked source. That
+      # copy ran on every `dlsys switch` and was the long pause at
+      # `copying '/home/dlangevi/auto/dl-herd' to the store`. The git fetcher
+      # copies tracked files only, which is the 664K.
+      #
+      # The local-override intent is unchanged: uncommitted edits to *tracked*
+      # files are still picked up (nix reads the dirty working tree and warns).
+      # What changes is that a brand-new file needs `git add` before it is
+      # visible -- the same rule this repo already has for its own modules.
       herdLocal = "/home/dlangevi/auto/dl-herd";
       herdSrc =
         if builtins.pathExists (herdLocal + "/flake.nix")
-        then builtins.getFlake "path:${herdLocal}"
+        then builtins.getFlake "git+file://${herdLocal}"
         else dl-herd;
 
       features = import ./features.nix {
