@@ -8,6 +8,7 @@
 mod init;
 mod machines;
 mod repo;
+mod rollout;
 mod runner;
 mod switch;
 
@@ -193,6 +194,19 @@ fn main() -> Result<()> {
             update,
             pull,
         } => do_switch(&runner, &dir, target, update, pull),
-        Command::Rollout { .. } => todo!("rollout"),
+        Command::Rollout { order, update } => {
+            let host = hostname(&runner, &dir)?;
+            let dir2 = dir.clone();
+            rollout::run(
+                &runner,
+                &dir,
+                order.as_deref(),
+                update,
+                &host,
+                &init::TtyPrompt,
+                // This host switches in-process rather than over ssh.
+                &|| do_switch(&RealRunner, &dir2, Target::Auto, false, false),
+            )
+        }
     }
 }
