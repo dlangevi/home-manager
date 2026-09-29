@@ -218,25 +218,57 @@ build_out() {
 # only moves one layer, and skips a nixos/ edit that evaluates to the system
 # already running. Deciding from changed file paths instead cannot do either.
 # The build is not wasted -- the switch that follows reuses it from the store.
+#
+# The two layers are evaluated concurrently. Each is a separate single-
+# threaded nix process and neither can see the other's result, so there is
+# nothing to serialise -- the daemon already arbitrates store access. Measured
+# on suspense: a no-op `switch auto` went from 18.97s to 9.77s. The eval
+# itself is not the fat (9.17s of CPU, 11.5M thunks, 7.1M calls for the NixOS
+# module fixpoint, and nix's eval cache does not cover deep config.* paths);
+# paying for it twice in sequence was.
+#
+# Caveat: both nix processes draw progress on stderr at once, so when there IS
+# work to do their output interleaves. Left as-is deliberately -- suppressing
+# one would hide real build progress, which matters more than tidy output.
 detect_targets() {
   local host=$1 is_nixos=$2
   local out=""
-  local built
+  local tmp hm_pid nixos_pid hm_rc=0 nixos_rc=0
+
+  tmp=$(mktemp -d)
 
   echo "==> checking home-manager layer" >&2
-  built=$(build_out ".#homeConfigurations.\"$host\".activationPackage")
-  if [[ "$built" != "$(current_hm)" ]]; then
-    out+="hm "
-  fi
+  build_out ".#homeConfigurations.\"$host\".activationPackage" >"$tmp/hm" &
+  hm_pid=$!
 
   if [[ $is_nixos -eq 1 ]]; then
     echo "==> checking nixos layer" >&2
-    built=$(build_out ".#nixosConfigurations.\"$host\".config.system.build.toplevel")
-    if [[ "$built" != "$(current_nixos)" ]]; then
-      out+="nixos "
-    fi
+    build_out ".#nixosConfigurations.\"$host\".config.system.build.toplevel" >"$tmp/nixos" &
+    nixos_pid=$!
   fi
 
+  # `|| rc=$?` rather than a bare `wait`: under `set -e` a failing child would
+  # otherwise kill the script here, before the message below explains which
+  # step actually broke.
+  wait "$hm_pid" || hm_rc=$?
+  if [[ $is_nixos -eq 1 ]]; then
+    wait "$nixos_pid" || nixos_rc=$?
+  fi
+
+  if [[ $hm_rc -ne 0 || $nixos_rc -ne 0 ]]; then
+    rm -rf "$tmp"
+    echo "Build failed while checking which layers changed; nothing was switched." >&2
+    exit 1
+  fi
+
+  if [[ "$(cat "$tmp/hm")" != "$(current_hm)" ]]; then
+    out+="hm "
+  fi
+  if [[ $is_nixos -eq 1 ]] && [[ "$(cat "$tmp/nixos")" != "$(current_nixos)" ]]; then
+    out+="nixos "
+  fi
+
+  rm -rf "$tmp"
   printf '%s' "$out"
 }
 
