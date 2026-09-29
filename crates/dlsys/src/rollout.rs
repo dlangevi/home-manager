@@ -10,12 +10,19 @@ use crate::switch;
 
 /// Upgrade order. suspense first: it runs the snapcast/music server that
 /// dance's snapclient connects to.
-pub const DEFAULT_ORDER: &[&str] = &["suspense", "dance", "console"];
+///
+/// console is deliberately NOT here. The bash version listed it while its own
+/// usage text said "default: suspense,dance" and "console is not covered --
+/// it is unreachable from the tailnet", so a bare `dlsys rollout` upgraded
+/// both real hosts and then hung on an ssh timeout to console before
+/// reporting failure. Confirmed unreachable when this was written
+/// (connection timed out). It stays in `ssh_target`, so `--order console`
+/// still works the day it joins the tailnet.
+pub const DEFAULT_ORDER: &[&str] = &["suspense", "dance"];
 
-/// host -> ssh destination. `console` is deliberately absent from the map's
-/// usable set in practice -- it is unreachable from the tailnet and upgraded
-/// by hand -- but it is listed so a `--order` naming it fails with the right
-/// message rather than a generic one.
+/// host -> ssh destination. console is here even though it is not in the
+/// default order, so naming it explicitly attempts a real connection rather
+/// than failing with "no ssh target".
 pub fn ssh_target(host: &str) -> Option<&'static str> {
     match host {
         "suspense" => Some("dlangevi@suspense"),
@@ -460,6 +467,26 @@ mod tests {
         let hosts = resolve_hosts(None, &registered(&["suspense", "dance", "console"])).unwrap();
         let pos = |h: &str| hosts.iter().position(|x| x == h).unwrap();
         assert!(pos("suspense") < pos("dance"), "{hosts:?}");
+    }
+
+    /// console is unreachable from the tailnet, so a bare `rollout` must not
+    /// try it -- the bash version did, and hung on an ssh timeout after
+    /// upgrading both real hosts.
+    #[test]
+    fn default_order_excludes_console() {
+        let hosts = resolve_hosts(None, &registered(&["suspense", "dance", "console"])).unwrap();
+        assert_eq!(hosts, vec!["suspense", "dance"], "{hosts:?}");
+    }
+
+    /// But asking for it explicitly still works, for the day it joins.
+    #[test]
+    fn console_can_still_be_named_explicitly() {
+        let hosts = resolve_hosts(
+            Some(&["console".to_string()]),
+            &registered(&["suspense", "console"]),
+        )
+        .unwrap();
+        assert_eq!(hosts, vec!["console"]);
     }
 
     /// A declined push must abort, not silently deploy the older pin to
