@@ -88,6 +88,11 @@ let
 
   snapPort = 1704;      # snapclient connections
   snapwebPort = 1780;   # snapweb: per-client volume and latency trim
+  # The same JSON-RPC control API snapweb drives, on a raw TCP socket instead
+  # of a websocket: newline-delimited JSON, so a CLI needs no websocket client.
+  # That is what crates/snapctl speaks, and what the Plasma hotkeys in
+  # modules/plasma.nix ultimately hit.
+  snapControlPort = 1705;
 
   # librespot's own HTTP handshake server (the "internal server" its
   # --zeroconf-port advertises); pinned rather than left random so the
@@ -151,8 +156,13 @@ in
         enabled = true;
         port = snapPort;
       };
-      # The JSON-RPC control socket is only used via snapweb below.
-      tcp-control.enabled = false;
+      # Raw-TCP JSON-RPC, for snapctl (crates/snapctl). snapweb speaks the
+      # same API over a websocket on the http port below, so this is a second
+      # door onto one control surface rather than a second surface.
+      tcp-control = {
+        enabled = true;
+        port = snapControlPort;
+      };
       http = {
         enabled = true;
         port = snapwebPort;
@@ -337,6 +347,8 @@ in
       ${allow tailnet snapPort}
       ${allow lanSubnet snapwebPort}
       ${allow tailnet snapwebPort}
+      ${allow lanSubnet snapControlPort}
+      ${allow tailnet snapControlPort}
       ${allow lanSubnet spotifyZeroconfPort}
       ${allow tailnet spotifyZeroconfPort}
       # mDNS is LAN-only: it relies on multicast, which Tailscale doesn't

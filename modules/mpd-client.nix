@@ -44,4 +44,34 @@ in
     # would be wrong on most hosts. Everything that goes through the MPD
     # protocol works without it.
   };
+
+  # MPRIS, so the desktop can drive the queue. mpd-mpris is a plain translator:
+  # it holds an MPD connection to dance and publishes org.mpris.MediaPlayer2.mpd
+  # on the *local* session bus, which is what Plasma's media applet, the lock
+  # screen, and kglobalaccel's media-key handling all read. Nothing about it is
+  # Plasma-specific -- any MPRIS-aware desktop picks it up -- so it lives beside
+  # the other clients rather than in modules/plasma.nix.
+  #
+  # The upstream module passes -no-instance, which is what pins the bus name to
+  # exactly org.mpris.MediaPlayer2.mpd instead of appending a pid. Plasma's
+  # applet copes either way; media keys are less reliable against a name that
+  # changes every restart.
+  #
+  # One surprise worth naming: MPRIS has a single Volume property, and
+  # mpd-mpris maps it onto MPD's own volume. For the fifo output that is the
+  # software mixer declared in nixos/modules/snapcast.nix -- the snapcast
+  # *master*, with per-client volume applied on top. So the applet's slider
+  # moves every speaker in the house, not just this machine's. Per-client trim
+  # is snapctl's job (modules/snapclient.nix).
+  services.mpd-mpris = {
+    enable = true;
+    mpd = {
+      # Defaults to config.services.mpd.enable, which is false here and would
+      # therefore already be right -- pinned anyway, because the option
+      # silently ignores host/port when true and that failure is invisible.
+      useLocal = false;
+      host = server;
+      inherit port;
+    };
+  };
 }

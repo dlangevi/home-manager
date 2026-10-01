@@ -7,7 +7,7 @@
 # on suspense means nothing else on the desktop can make a sound. The cost is
 # that playback follows the session -- no login on a box, no audio from it,
 # which is the behaviour you want anyway.
-{ pkgs, lib, ... }:
+{ pkgs, lib, snapctl, ... }:
 
 let
   # dance hosts snapserver. Resolves over the LAN, and over MagicDNS when off
@@ -16,7 +16,13 @@ let
   port = 1704;
 in
 {
-  home.packages = [ pkgs.snapcast ];
+  # snapcast for the client binary itself; snapctl (crates/snapctl) for
+  # driving *other* clients' volume, mute and latency trim from here --
+  # per-client state lives on the server, so any machine in the group can set
+  # any other's. It is what the Plasma hotkeys in modules/plasma.nix run, and
+  # it is equally the CLI answer to "turn the other room down" on a host with
+  # no desktop at all.
+  home.packages = [ pkgs.snapcast snapctl ];
 
   systemd.user.services.snapclient = {
     Unit = {

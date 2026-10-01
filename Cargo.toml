@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/dlsys"]
+members = ["crates/dlsys", "crates/snapctl"]
 resolver = "2"

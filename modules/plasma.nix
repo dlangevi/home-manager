@@ -1,4 +1,4 @@
-# Plasma tuning. Four unrelated things live here:
+# Plasma tuning. Five unrelated things live here:
 #
 #   0. KRunner is purely D-Bus activated -- the unit plasma-workspace ships has
 #      no [Install] section at all -- so it does not exist until the first
@@ -23,8 +23,20 @@
 #   3. Default terminal. Konsole is hardcoded as KIO's fallback, so wezterm has
 #      to be named explicitly.
 #
+#   4. Snapcast hotkeys. Plasma's mixer enumerates local PipeWire streams, so
+#      this machine's own snapclient already has a native volume control and
+#      the other box in the room has none -- there is no widget that can
+#      represent a remote client at all. snapweb has those controls and is a
+#      browser tab you have to go open. Global shortcuts onto snapctl are the
+#      native mechanism that is left.
+#
+#      Playback is deliberately not here: mpd-mpris (modules/mpd-client.nix)
+#      publishes the queue over MPRIS, which the media applet, the lock
+#      screen and the hardware media keys already consume. Binding transport
+#      to snapctl as well would be a second, worse surface for the same thing.
+#
 # Only the keys named below are written -- see overrideConfig.
-{ config, ... }:
+{ config, snapctl, ... }:
 {
   # Pull KRunner up to login time. plasma-workspace.target is the right anchor:
   # it is reached once the desktop is actually up, so krunner warms in the idle
@@ -41,6 +53,31 @@
 
   programs.plasma = {
     enable = true;
+
+    # Volume for the *other* room's speakers. Meta+Shift+Left/Right are
+    # already KWin's move-window-to-screen, so the pair here is Up/Down.
+    #
+    # The absolute store path rather than a bare `snapctl`: a global shortcut
+    # runs with almost no environment, and naming the path also decouples this
+    # feature from the snapclient feature, which only happens to be selected
+    # on the same machine today.
+    hotkeys.commands = {
+      "snapcast-dance-volume-up" = {
+        name = "Snapcast: dance volume up";
+        key = "Meta+Shift+Up";
+        command = "${snapctl}/bin/snapctl volume dance +5 --notify";
+      };
+      "snapcast-dance-volume-down" = {
+        name = "Snapcast: dance volume down";
+        key = "Meta+Shift+Down";
+        command = "${snapctl}/bin/snapctl volume dance -5 --notify";
+      };
+      "snapcast-dance-mute" = {
+        name = "Snapcast: dance mute toggle";
+        key = "Meta+Shift+M";
+        command = "${snapctl}/bin/snapctl mute dance --notify";
+      };
+    };
 
     # Write only the keys named below and leave the rest of Plasma's config
     # mutable. Load-bearing, not a default we're coasting on: kwinrc holds ~26

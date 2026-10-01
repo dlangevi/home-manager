@@ -60,34 +60,59 @@
         then builtins.getFlake "git+file://${herdLocal}"
         else dl-herd;
 
-      # The apply tool itself. Built from this repo so `nix run .#dlsys` works
-      # with nothing but nix and a checkout -- that is what bootstrap.sh relies
-      # on, and why home-manager is not a prerequisite for bootstrapping.
+      # The cargo workspace under ./crates, as one source tree shared by every
+      # binary built from it.
       #
+      # Only the crates, not the whole repo. With `src = ./.` every edit to
+      # any module .nix would change the derivation and rebuild them -- on
+      # this host and, during a rollout, on every remote host too.
+      #
+      # It is the whole workspace rather than one crate per package, which
+      # does mean editing either crate rebuilds both. Narrowing per package is
+      # not possible while the root Cargo.toml lists both members: a missing
+      # member directory fails `cargo metadata` before anything compiles.
+      rustSrc = pkgs.lib.fileset.toSource {
+        root = ./.;
+        fileset = pkgs.lib.fileset.unions [ ./Cargo.toml ./Cargo.lock ./crates ];
+      };
+
       # cargoLock.lockFile rather than a cargoHash: adding a dependency then
       # costs a `cargo add`, not a hand-updated sha256 that fails the build
       # once before you learn the right value.
-      dlsysPkg = pkgs.rustPlatform.buildRustPackage {
-        pname = "dlsys";
-        version = "0.1.0";
+      #
+      # runtimeInputs get wrapped onto PATH rather than assumed, so a binary
+      # invoked from a bare `nix run` -- or from a KDE global shortcut, which
+      # inherits almost nothing -- still finds what it shells out to.
+      mkRustPkg = { pname, runtimeInputs ? [ ] }:
+        pkgs.rustPlatform.buildRustPackage {
+          inherit pname;
+          version = "0.1.0";
+          src = rustSrc;
+          cargoLock.lockFile = ./Cargo.lock;
+          cargoBuildFlags = [ "-p" pname ];
+          cargoTestFlags = [ "-p" pname ];
 
-        # Only the crate, not the whole repo. With `src = ./.` every edit to
-        # any module .nix would change the derivation and rebuild dlsys --
-        # on this host and, during a rollout, on every remote host too.
-        src = pkgs.lib.fileset.toSource {
-          root = ./.;
-          fileset = pkgs.lib.fileset.unions [ ./Cargo.toml ./Cargo.lock ./crates ];
+          nativeBuildInputs = pkgs.lib.optional (runtimeInputs != [ ]) pkgs.makeWrapper;
+          postInstall = pkgs.lib.optionalString (runtimeInputs != [ ]) ''
+            wrapProgram $out/bin/${pname} \
+              --prefix PATH : ${pkgs.lib.makeBinPath runtimeInputs}
+          '';
         };
-        cargoLock.lockFile = ./Cargo.lock;
 
-        # dlsys shells out to all of these. Wrapping them on PATH keeps it
-        # working when invoked from a bare `nix run` on a machine whose user
-        # environment has none of them yet -- the bootstrap case.
-        nativeBuildInputs = [ pkgs.makeWrapper ];
-        postInstall = ''
-          wrapProgram $out/bin/dlsys \
-            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.git pkgs.openssh ]}
-        '';
+      # The apply tool itself. Built from this repo so `nix run .#dlsys` works
+      # with nothing but nix and a checkout -- that is what bootstrap.sh relies
+      # on, and why home-manager is not a prerequisite for bootstrapping.
+      dlsysPkg = mkRustPkg {
+        pname = "dlsys";
+        runtimeInputs = [ pkgs.git pkgs.openssh ];
+      };
+
+      # Per-client snapcast control (crates/snapctl), driven from the Plasma
+      # global shortcuts in modules/plasma.nix. libnotify for `--notify`: a
+      # hotkey has no terminal, so the notification is the only feedback.
+      snapctlPkg = mkRustPkg {
+        pname = "snapctl";
+        runtimeInputs = [ pkgs.libnotify ];
       };
 
       features = import ./features.nix {
@@ -129,6 +154,11 @@
         extraSpecialArgs = {
           inherit username homeDirectory hostname;
           dlsys = dlsysPkg;
+          # Threaded through like dlsys so modules/plasma.nix can name the
+          # binary by absolute store path. That keeps the plasma feature from
+          # depending on the snapclient feature having installed it, which
+          # today is true only because suspense happens to select both.
+          snapctl = snapctlPkg;
         };
       };
     in
@@ -149,6 +179,10 @@
 
         # The apply tool. `nix run .#dlsys` is what bootstrap.sh execs into.
         dlsys = dlsysPkg;
+
+        # Exposed mainly so `nix run .#snapctl -- status` works against a
+        # checkout without a switch, the same way dlsys does.
+        snapctl = snapctlPkg;
       };
 
       devShells.${system}.default = pkgs.mkShell {
