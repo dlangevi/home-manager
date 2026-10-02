@@ -71,8 +71,16 @@
       #   journalctl --user -u sunshine | grep "Detected display"
       #   -> Detected display: DP-4 (id: 5)DP-4 connected: true
       output_name = "5";
-      resolutions = "[1280x720,1920x1080,2560x1440]";
-      fps = "[60,120]";
+
+      # `resolutions` and `fps` used to be set here. They are not Sunshine
+      # options and never were on this version -- it logs
+      #
+      #   Warning: Unrecognized configurable option [resolutions]
+      #   Warning: Unrecognized configurable option [fps]
+      #
+      # on every start and ignores them. Resolution and frame rate are
+      # negotiated by the Moonlight client, not declared by the host, so
+      # there is nothing to replace them with. Removed rather than fixed.
 
       # Encoder settings below are sized for the RTX 2070 SUPER (TU104,
       # 7th-gen NVENC). They were written for the GTX 1060 that preceded it
@@ -95,20 +103,25 @@
       #   p5      full_res      on           119   <- misses 120
       #   p7      full_res      on            60
       #
-      # p4 is the best preset that still clears the advertised 120 fps with
-      # margin. p5 does not, and p7 is not close. Higher presets buy
-      # compression at a fixed bitrate, which is what matters here because
-      # this streams over the tailnet where bandwidth, not GPU time, is the
-      # scarce resource.
+      # p4 is the best preset that still clears 120 fps with margin; p5 does
+      # not, and p7 is not close. 120 is the ceiling a Moonlight client asks
+      # for on this 1440p panel, so that is the number to beat.
+      #
+      # Higher presets buy compression at a fixed bitrate, and bitrate is
+      # measurably the scarce resource here, not GPU time -- an observed
+      # session negotiated only 7.3 Mbps for 1440p ("Streaming bitrate is
+      # 7308000"), which is far below what this resolution wants.
       nvenc_preset = 4;
 
-      # Left at the default. full_res measured 137 fps against quarter_res
-      # 138 at p4, i.e. no real throughput cost -- but only ~14% headroom
-      # over the 120 fps target either way, and that margin is measured with
-      # the GPU otherwise idle. A game rendering at 1440p120 on the same card
-      # competes for memory bandwidth, so spend the slack on the preset
-      # rather than on a second pass worth roughly nothing here.
-      nvenc_twopass = "quarter_res";
+      # full_res measured 137 fps against quarter_res 138 at p4 -- a ~1%
+      # throughput cost, so effectively free, and both clear 120.
+      #
+      # Worth taking despite the thin margin because the second pass is what
+      # holds the encoder to the requested bitrate. Overshooting a frame
+      # budget shows up as a burst the network drops, and dropped packets in
+      # a frame are exactly the corrupt-band artifact seen on this stream.
+      # At the low bitrates actually being negotiated that risk is real.
+      nvenc_twopass = "full_res";
 
       # Essentially free on Turing (138 fps with it, 144 without, both over
       # target) and it is the knob that helps most at the lower bitrates a
