@@ -28,12 +28,49 @@
   services.sunshine = {
     enable = true;
     autoStart = true;
-    capSysAdmin = true;
     openFirewall = true;
+
+    # capSysAdmin must stay false on this host, and that is load-bearing
+    # rather than a tidy-up. It exists so the KMS/portal capture backends can
+    # grab the screen, which only matters under Wayland -- this host pins
+    # plasmax11 and sddm.wayland.enable = false, so capture goes through X11,
+    # which needs no capability at all.
+    #
+    # Turning it on actively breaks NVENC. The module implements it with a
+    # security.wrapper carrying cap_sys_admin+p, and any file capability makes
+    # the process AT_SECURE, which NVIDIA's libcuda refuses to initialise in:
+    #
+    #   Error: Failed to create a CUDA device: Operation not permitted
+    #
+    # Sunshine then walks nvenc -> vulkan -> vaapi -> software, fails all four
+    # and exits with "Unable to find display or encoder during startup". The
+    # error names neither CAP_SYS_ADMIN nor the GPU, so it reads like a driver
+    # fault rather than a capability one.
+    capSysAdmin = false;
     settings = {
       # Restrict capture to the 1440p monitor; the second display confuses
       # single-screen Moonlight clients.
-      output_name = "DP-2";
+      #
+      # This is an INDEX, not a connector name. Sunshine's X11 backend parses
+      # output_name as an integer; a name like "DP-2" parses to garbage and
+      # produces the misleading
+      #
+      #   Could not stream display number [23172], there are only [7] displays
+      #
+      # 7 is every XRandR output including disconnected ones, so the index
+      # space covers dark outputs too and is positional.
+      #
+      # Beware two different namespaces for the same hardware: the kernel/KMS
+      # side calls these DP-1/DP-2/DP-3/HDMI-A-1, while the nvidia X driver
+      # calls them DP-0..DP-5/HDMI-0. "DP-2" was the old card's KMS name and
+      # survived the swap to the 2070 SUPER; under X11 DP-2 is now a
+      # disconnected output, and the 1440p panel is DP-4 at index 5.
+      #
+      # Re-derive after any GPU or cable change -- the index moves. Sunshine
+      # prints the mapping at startup:
+      #   journalctl --user -u sunshine | grep "Detected display"
+      #   -> Detected display: DP-4 (id: 5)DP-4 connected: true
+      output_name = "5";
       resolutions = "[1280x720,1920x1080,2560x1440]";
       fps = "[60,120]";
 
@@ -89,6 +126,18 @@
       #   nvenc_realtime_hags -- Windows-only (HAGS); no effect on Linux.
     };
   };
+
+  # Required by capSysAdmin = false above, and the two must move together.
+  # With the wrapper gone the unit execs the bare ELF from the store, and the
+  # module sets no library path, so libcuda.so.1 is simply not found:
+  #
+  #   Error: [CUDA @ ...] Cannot load libcuda.so.1
+  #
+  # That is the same "Encoder [nvenc] failed" symptom as the capability bug
+  # with an unrelated cause, so dropping capSysAdmin without this line looks
+  # like the fix did nothing.
+  systemd.user.services.sunshine.environment.LD_LIBRARY_PATH =
+    "${pkgs.addDriverRunpath.driverLink}/lib";
 
   # Resilio Sync removed. It was the single loudest thing on this machine:
   # rslsync runs with its debug log mask at FFFFFFFF and wrote 11307 of the
