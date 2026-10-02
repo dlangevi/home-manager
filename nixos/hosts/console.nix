@@ -11,7 +11,10 @@
       FastConnectable = false;
     };
     Policy = {
-      AutoEnable = false;
+      # The external dongle is now the only controller (see the udev rule
+      # below), so leaving this off meant a cold boot came up with no
+      # Bluetooth at all until something powered the adapter by hand.
+      AutoEnable = true;
     };
   };
 
