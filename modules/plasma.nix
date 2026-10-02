@@ -79,6 +79,50 @@
       };
     };
 
+    # Steam Big Picture always opens on DP-0 (the 1080p panel) rather than the
+    # 32" DP-4, because Steam restores whatever geometry it last saw and the
+    # 1080p one is where the desktop-mode client lives.
+    #
+    # Two details this rule depends on, both measured on suspense rather than
+    # guessed -- a hand-written version of this rule sitting in kwinrulesrc had
+    # each of them wrong, which is why it silently did nothing:
+    #
+    #   * The window's WM_CLASS is `"steamwebhelper", "steam"` -- the BPM
+    #     window is a CEF helper, not the Steam client proper. match-whole
+    #     would compare the pair "steamwebhelper steam", so it has to be off
+    #     and match the class alone. The desktop client shares that class,
+    #     which is what the title match is for.
+    #
+    #   * KWin numbers screens positionally, not by connector name, and the
+    #     order is *not* left-to-right: `workspace.screens` reports
+    #     0=DP-4 (2560x1440 @ 1920,0) and 1=DP-0 (1920x1080 @ 0,360), i.e.
+    #     the primary comes first. So the 32" is 0. Unplugging or re-ordering
+    #     displays renumbers this; there is no name-based alternative in
+    #     kwinrules.
+    #
+    # `force` rather than `initially` so Steam cannot drag it back on a later
+    # show -- BPM hides and re-maps the same window when you toggle out and in.
+    window-rules = [
+      {
+        description = "Steam Big Picture on the 32\" display";
+        match = {
+          window-class = {
+            value = "steam";
+            type = "exact";
+            match-whole = false;
+          };
+          title = {
+            value = "Steam Big Picture Mode";
+            type = "substring";
+          };
+        };
+        apply.screen = {
+          value = 0;
+          apply = "force";
+        };
+      }
+    ];
+
     # Write only the keys named below and leave the rest of Plasma's config
     # mutable. Load-bearing, not a default we're coasting on: kwinrc holds ~26
     # [Tiling][<uuid>] blocks of live layout state that overrideConfig = true
