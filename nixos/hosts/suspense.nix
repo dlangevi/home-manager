@@ -36,6 +36,57 @@
       output_name = "DP-2";
       resolutions = "[1280x720,1920x1080,2560x1440]";
       fps = "[60,120]";
+
+      # Encoder settings below are sized for the RTX 2070 SUPER (TU104,
+      # 7th-gen NVENC). They were written for the GTX 1060 that preceded it
+      # and never revisited, so they were leaving quality on the table.
+      #
+      # Pin the encoder instead of letting Sunshine auto-select. Auto-select
+      # silently falls back to software x264 if NVENC probing fails -- the
+      # stream still works, so the regression is easy to miss for weeks.
+      # Failing loudly is better than streaming off the CPU by accident.
+      encoder = "nvenc";
+
+      # Measured on this card, hevc_nvenc at 2560x1440, encoding 300 raw
+      # frames fed from tmpfs so neither NVDEC nor disk is in the loop
+      # (pipeline ceiling with encode disabled: 763 fps):
+      #
+      #   preset  twopass       spatial_aq   fps
+      #   p1      quarter_res   on           212
+      #   p4      quarter_res   on           138
+      #   p4      full_res      on           137
+      #   p5      full_res      on           119   <- misses 120
+      #   p7      full_res      on            60
+      #
+      # p4 is the best preset that still clears the advertised 120 fps with
+      # margin. p5 does not, and p7 is not close. Higher presets buy
+      # compression at a fixed bitrate, which is what matters here because
+      # this streams over the tailnet where bandwidth, not GPU time, is the
+      # scarce resource.
+      nvenc_preset = 4;
+
+      # Left at the default. full_res measured 137 fps against quarter_res
+      # 138 at p4, i.e. no real throughput cost -- but only ~14% headroom
+      # over the 120 fps target either way, and that margin is measured with
+      # the GPU otherwise idle. A game rendering at 1440p120 on the same card
+      # competes for memory bandwidth, so spend the slack on the preset
+      # rather than on a second pass worth roughly nothing here.
+      nvenc_twopass = "quarter_res";
+
+      # Essentially free on Turing (138 fps with it, 144 without, both over
+      # target) and it is the knob that helps most at the lower bitrates a
+      # remote tailnet client negotiates.
+      nvenc_spatial_aq = true;
+
+      # Deliberately not set:
+      #   av1_mode        -- Turing has no AV1 encoder; the default already
+      #                      advertises by capability, so forcing it does
+      #                      nothing but risk advertising a codec we lack.
+      #   hevc_mode       -- default auto already picks up Turing's much
+      #                      better HEVC (Pascal lacked HEVC B-frames).
+      #   nvenc_split_encode -- needs 2+ NVENC units and 4K+. TU104 has one
+      #                      unit, so this is inert on this card.
+      #   nvenc_realtime_hags -- Windows-only (HAGS); no effect on Linux.
     };
   };
 
