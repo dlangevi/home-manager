@@ -28,9 +28,20 @@
     openFirewall = true;
   };
 
-  # udev hidraw rule
+  # udev hidraw rule, plus: deauthorize the builtin Bluetooth radio.
+  #
+  # The Intel 8087:0a2a is the BT half of the M.2 combo card whose WiFi side
+  # is wlp1s0 -- it hangs off an internal USB hub, not PCIe. Its antenna is
+  # buried in the chassis and the range is poor, so we hard-disable it at
+  # enumeration and let the external Realtek RTL8761BU dongle (0bda:8771) be
+  # the only controller bluetoothd ever sees. Keyed on idVendor/idProduct
+  # rather than the port path (3-2.2) because USB port numbering can shift
+  # across reboots; the two radios have distinct IDs, so this is unambiguous.
+  #
+  # To undo: drop the authorized="0" line and `nrs`.
   services.udev.extraRules = ''
       SUBSYSTEMS=="hidraw", ACTION=="add", MODE="0660", GROUP="console"
+      ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="8087", ATTR{idProduct}=="0a2a", ATTR{authorized}="0"
   '';
 
   # User
