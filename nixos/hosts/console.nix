@@ -57,13 +57,10 @@
     packages = with pkgs; [ kdePackages.kate ];
   };
 
-  programs.steam = {
-    enable = true;
-    remotePlay.openFirewall = true;
-    localNetworkGameTransfers.openFirewall = true;
-    protontricks.enable = true;
-    extraCompatPackages = [ pkgs.proton-ge-bin ];
-  };
+  # No Steam here. Gaming on console is Moonlight streaming from suspense
+  # (moonlight-qt, desktop-apps feature), so the local 32-bit libs, Proton
+  # builds, and Remote Play firewall holes bought nothing but disk and
+  # attack surface.
 
   # CPU freq cap for Ryzen 5 3550H thermal
   powerManagement.cpuFreqGovernor = "schedutil";
