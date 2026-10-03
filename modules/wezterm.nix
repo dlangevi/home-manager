@@ -625,7 +625,7 @@ ${sshHostsLua}      }
       -- pointing at the mux, a plain `wezterm start` -- which is what both the
       -- packaged .desktop file and KDE's TerminalApplication run -- adopts the
       -- windows already in the mux instead of adding another one.
-      if not passthrough then
+      if mux_mode and not passthrough then
         config.default_domain = this_host
       end
 
