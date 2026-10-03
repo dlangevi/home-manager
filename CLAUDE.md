@@ -64,7 +64,13 @@ kernel modules, microcode) — anything you'd *choose* rather than detect goes
 in `hosts/<name>.nix`. A host with that file checked in evaluates purely and
 can be built from anywhere; a host without one still falls back to reading
 `/etc/nixos/hardware-configuration.nix` off the build machine, so it must be
-built on that host with `--impure`. Only `suspense` is migrated so far.
+built on that host with `--impure`. All three machines are migrated, so
+`nix flake check` now evaluates every host purely and nothing needs
+`--impure` any more. Keep it that way: a new machine should get its
+`nixos/hardware/<name>.nix` checked in at the same time as its host file.
+The file must be `git add`ed before it takes effect -- pure eval only sees
+the git tree, so an untracked hardware file silently falls back to
+`/etc/nixos`.
 
 Put a program in **NixOS** (`nixos/common.nix` or `nixos/hosts/<name>.nix`)
 if any of:
