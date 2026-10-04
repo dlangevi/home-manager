@@ -337,28 +337,53 @@
   environment.variables.GTK_IM_MODULE = lib.mkForce "";
   environment.variables.QT_IM_MODULE = lib.mkForce "";
 
-  # Off for now, following the GTX 1060 -> RTX 2070 SUPER swap.
-  #
-  # Note what this silently costs: herd's `refresh-task` asks this endpoint for
-  # session labels and does not error when nothing is listening -- the label
-  # just stays empty. That is the symptom to expect, not a failed service.
-  #
-  # To re-enable, restore:
-  #
-  #   services.ollama = {
-  #     enable = true;
-  #     # nixpkgs' ollama-cuda is unfree CUDA, so cache.nixos.org never carries
-  #     # it -- llama-cpp compiles locally on every rebuild. The default
-  #     # cudaArches builds nine targets for a one-card machine; sm_75 is the
-  #     # 2070 SUPER and cuts that work by ~9x. Update it if the GPU changes,
-  #     # or ollama dies with "no kernel image is available for execution on
-  #     # the device".
-  #     package = pkgs.ollama-cuda.override { cudaArches = [ "sm_75" ]; };
-  #     # DynamicUser with its own /var/lib/ollama store, so the model has to
-  #     # be declared rather than inherited from whatever sits in ~/.ollama.
-  #     loadModels = [ "qwen2.5:3b" ];
-  #   };
-  services.ollama.enable = false;
+  # Serves the phone chat app in ~/auto/android/chat over the tailnet, and
+  # herd's `refresh-task`, which asks this endpoint for session labels and does
+  # not error when nothing is listening -- an empty label is the symptom of
+  # this being off, not a failed service.
+  services.ollama = {
+    enable = true;
+
+    # nixpkgs' ollama-cuda is unfree CUDA, so cache.nixos.org never carries
+    # it -- llama-cpp compiles locally on every rebuild. The default
+    # cudaArches builds nine targets for a one-card machine; sm_75 is the
+    # 2070 SUPER and cuts that work by ~9x. Update it if the GPU changes,
+    # or ollama dies with "no kernel image is available for execution on
+    # the device".
+    package = pkgs.ollama-cuda.override { cudaArches = [ "sm_75" ]; };
+
+    # The default binds loopback only, which the phone cannot reach. Exposure
+    # is controlled by the firewall rules below, not by binding narrowly:
+    # the tailnet address is not known at eval time.
+    host = "0.0.0.0";
+
+    # DynamicUser with its own /var/lib/ollama store, so the model has to
+    # be declared rather than inherited from whatever sits in ~/.ollama.
+    #
+    # qwen3.5:9b over the old qwen2.5:3b because ~/auto/research/gpu-llm-upgrade.md
+    # benchmarked this card and found it the only model in the 8G class that
+    # never spills to CPU -- the 12-14B tier all spill and collapse to 4-10
+    # tok/s. Anything herd is configured to ask for must also appear here.
+    loadModels = [ "qwen3.5:9b" ];
+
+    environmentVariables = {
+      # Plasma on X11 holds 300-600M of VRAM and qwen3.5:9b wants 6.96G at 32K
+      # context, which together exceed the card. 8K is the documented stable
+      # point for 8G; raise it only if this host ever goes headless.
+      OLLAMA_CONTEXT_LENGTH = "8192";
+    };
+  };
+
+  # Scoped to source rather than `openFirewall = true`, which would publish the
+  # API to the whole LAN unauthenticated -- ollama has no auth of its own. Same
+  # posture as the navidrome/jellyfin rules in ../modules/media-audio.nix.
+  networking.firewall.extraCommands =
+    let allow = subnet:
+      "iptables -A nixos-fw -p tcp -s ${subnet} --dport 11434 -j nixos-fw-accept";
+    in ''
+      ${allow "100.64.0.0/10"}
+      ${allow "10.0.70.0/24"}
+    '';
 
   environment.systemPackages = with pkgs; [
     # This box has two EFI System Partitions -- the live 1000M one and the
