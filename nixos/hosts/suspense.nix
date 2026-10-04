@@ -25,6 +25,15 @@
     openFirewall = true;
   };
 
+  # Arm the NIC to keep listening in S5. The board half is a BIOS setting
+  # (Advanced -> ACPI Configuration: "PCIE Devices Power On" enabled, "Deep
+  # Sleep" disabled); this is the adapter half, which the r8169 driver
+  # otherwise leaves off. The default policy is already [ "magic" ].
+  #
+  # Getting the packet here from off-LAN is a third thing again -- see
+  # ../modules/wol-relay.nix on dance.
+  networking.interfaces.enp5s0.wakeOnLan.enable = true;
+
   services.sunshine = {
     enable = true;
     autoStart = true;
