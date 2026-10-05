@@ -1,7 +1,7 @@
 { pkgs, ... }:
 
 {
-  imports = [ ../modules/media-audio.nix ../modules/snapcast.nix ../modules/mympd.nix ../modules/freelance-site.nix ../modules/album-requests.nix ../modules/slskd.nix ../modules/wol-relay.nix ];
+  imports = [ ../modules/media-audio.nix ../modules/snapcast.nix ../modules/mympd.nix ../modules/freelance-site.nix ../modules/album-requests.nix ../modules/slskd.nix ../modules/wol-relay.nix ../modules/querying.nix ];
 
   networking.hostName = "dance";
   system.stateVersion = "24.11";

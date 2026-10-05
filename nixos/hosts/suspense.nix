@@ -1,7 +1,10 @@
 { config, pkgs, lib, ... }:
 
 {
-  imports = [ ../modules/dance-storage.nix ];
+  imports = [
+    ../modules/dance-storage.nix
+    ../modules/stable-diffusion.nix
+  ];
 
   networking.hostName = "suspense";
   system.stateVersion = "23.11";
@@ -364,7 +367,16 @@
     # benchmarked this card and found it the only model in the 8G class that
     # never spills to CPU -- the 12-14B tier all spill and collapse to 4-10
     # tok/s. Anything herd is configured to ask for must also appear here.
-    loadModels = [ "qwen3.5:9b" ];
+    #
+    # The abliterated build is the same 9B at the same ~6.4G, so it is a
+    # straight alternative rather than a second thing to fit -- only one is
+    # ever resident, and the phone client picks per conversation from
+    # /api/tags rather than from this list. Declaring it here is still what
+    # makes it survive a rebuild.
+    loadModels = [
+      "qwen3.5:9b"
+      "huihui_ai/qwen3.5-abliterated:9b"
+    ];
 
     environmentVariables = {
       # Measured on this host 2026-10-04, qwen3.5:9b, Plasma resident (577M
@@ -411,6 +423,19 @@
       # would defeat the purpose. Verified with a needle-in-haystack at
       # 8.4K prompt tokens, needle at 10/50/90% depth: all three recalled
       # exactly. Re-run that check before moving to q4_0.
+      #
+      # Re-measured 2026-10-04 with ../modules/stable-diffusion.nix running:
+      # 24.4 tok/s at 79% GPU for qwen3.5:9b, 22.7 at 77% for the abliterated
+      # build. The table above no longer reproduces, and sd-server is only a
+      # small part of why -- it holds a 252M CUDA context, which moves
+      # placement from 81% to 77-79%. The card was already over budget before
+      # it existed, because the desktop's own VRAM use has roughly doubled
+      # since that benchmark (577M then, ~900M now) and 12288 was picked as
+      # the largest window that *just* fit at the time.
+      #
+      # Left alone deliberately: 23 tok/s still clears reading speed on the
+      # phone client, and the step down to 8192 is the lever if it ever stops
+      # doing so.
       OLLAMA_FLASH_ATTENTION = "1";
       OLLAMA_KV_CACHE_TYPE = "q8_0";
     };
@@ -426,14 +451,19 @@
   # from the tailnet. Omitting it fails in a way that looks like a routing
   # problem rather than a firewall one -- ICMP is allowed by default, so the
   # host pings fine and only the TCP connect times out.
+  #
+  # Two ports now: 11434 is ollama and 1234 is sd-server (../modules/
+  # stable-diffusion.nix). sd-server has no auth either, and its default web UI
+  # is served on that same port, so it gets exactly the same three subnets
+  # rather than anything looser.
   networking.firewall.extraCommands =
-    let allow = subnet:
-      "iptables -A nixos-fw -p tcp -s ${subnet} --dport 11434 -j nixos-fw-accept";
-    in ''
-      ${allow "100.64.0.0/10"}
-      ${allow "192.168.2.0/24"}
-      ${allow "10.0.70.0/24"}
-    '';
+    let
+      subnets = [ "100.64.0.0/10" "192.168.2.0/24" "10.0.70.0/24" ];
+      ports = [ 11434 1234 ];
+      allow = port: subnet:
+        "iptables -A nixos-fw -p tcp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
+    in
+    lib.concatMapStringsSep "\n" (port: lib.concatMapStringsSep "\n" (allow port) subnets) ports;
 
   environment.systemPackages = with pkgs; [
     # This box has two EFI System Partitions -- the live 1000M one and the
