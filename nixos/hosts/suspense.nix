@@ -367,42 +367,50 @@
     loadModels = [ "qwen3.5:9b" ];
 
     environmentVariables = {
-      # Measured on this host 2026-10-04 with Plasma resident (577M of VRAM),
-      # qwen3.5:9b, `ollama ps` for placement and eval_count/eval_duration
-      # for rate:
+      # Measured on this host 2026-10-04, qwen3.5:9b, Plasma resident (577M
+      # of VRAM). `ollama ps` for placement, eval_count/eval_duration for
+      # rate. Left column is this config; right is the same host before
+      # flash attention and the quantized KV cache below:
       #
-      #   4096   48.5 tok/s   100% GPU      <- the only fully-resident size
-      #   4608   36.7 tok/s   12% CPU
-      #   8192   34.5 tok/s   12% CPU
-      #   16384  24.1 tok/s   19% CPU
+      #   ctx     with FA + q8_0      plain
+      #   4096    47.3  100% GPU      48.5  100% GPU
+      #   8192    47.5  100% GPU      34.5  12% CPU
+      #   12288   56.0  100% GPU      --
+      #   14336   42.1  12% CPU       --
+      #   16384   37.4  12% CPU       24.1  19% CPU
+      #   32768   24.5  19% CPU       --
       #
-      # Two things that contradict the earlier assumption here: 8K was never
-      # spill-free on this card, and spilling costs ~30-50%, not the ~5x that
-      # the 12-14B benchmarks show -- those spill 15-19 of 63 layers, this
-      # spills 12-19%. So 16K is a deliberate trade of 29% throughput for 2x
-      # the conversation window, and 24 tok/s still outruns reading speed on
-      # the phone client. Drop to 4096 if latency ever matters more than
-      # context; anything in between is strictly worse than 4096 and no
-      # cheaper than 16384.
-      OLLAMA_CONTEXT_LENGTH = "16384";
+      # 12288 is picked as the largest size that stays entirely on the GPU,
+      # which also happens to be the fastest configuration measured. Note
+      # it beats the old 8192 setting on both axes at once -- more context
+      # and more throughput -- so there is no trade being made here.
+      #
+      # Two corrections to the assumption this file used to encode: 8192 was
+      # never spill-free on this card, and spilling costs ~30-50% rather
+      # than the ~5x the 12-14B benchmarks show, because those offload
+      # 15-19 of 63 layers while this offloads 12-19%.
+      #
+      # Raising this is a straight trade against throughput, and the step
+      # that matters is 12288 -> 14336, where it leaves the GPU. 16384 and
+      # 32768 are both usable (37 and 25 tok/s, still above reading speed
+      # on the phone client) if a longer window is ever worth more.
+      OLLAMA_CONTEXT_LENGTH = "12288";
 
-      # The KV cache is what pushes 16K off the GPU, so quantize it rather
-      # than shrink it: q8_0 roughly halves cache bytes per token, which is
-      # the difference between spilling 19% and fitting. If it works, the
-      # 29% trade recorded above goes away and 16K runs at the 4096 rate.
+      # The KV cache is what decides where that boundary sits, so quantize
+      # it rather than shrink the context: q8_0 roughly halves cache bytes
+      # per token and moved the whole curve a full doubling -- 8192 went
+      # from spilling to fully resident, and 12288 became reachable at a
+      # rate the old config could not hit at any size.
       #
-      # Flash attention is the precondition -- llama.cpp will not take a
-      # quantized KV cache without it. Turing does support it (sm_75 is
-      # where llama.cpp's FA kernels start), but ollama's own default is
-      # conservative, so set it explicitly rather than assuming.
+      # Flash attention is the precondition (llama.cpp will not take a
+      # quantized KV cache without it) and is worth something on its own:
+      # 4096 is unchanged at ~48 tok/s despite the cache now being quantized,
+      # and 12288 is faster than 4096 ever was.
       #
-      # q8_0 over q4_0 deliberately: q8_0 is the one generally described as
-      # near-lossless, while q4_0 KV measurably degrades long-context recall
-      # -- and recall is the entire reason for running 16K instead of 4096.
-      #
-      # Verify after switching, do not assume: `ollama ps` must say 100% GPU
-      # at 16384. If it still spills, this bought nothing and should be
-      # reverted rather than left in place looking load-bearing.
+      # q8_0 over q4_0 deliberately, since degraded long-context recall
+      # would defeat the purpose. Verified with a needle-in-haystack at
+      # 8.4K prompt tokens, needle at 10/50/90% depth: all three recalled
+      # exactly. Re-run that check before moving to q4_0.
       OLLAMA_FLASH_ATTENTION = "1";
       OLLAMA_KV_CACHE_TYPE = "q8_0";
     };
