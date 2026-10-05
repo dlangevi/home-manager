@@ -367,10 +367,24 @@
     loadModels = [ "qwen3.5:9b" ];
 
     environmentVariables = {
-      # Plasma on X11 holds 300-600M of VRAM and qwen3.5:9b wants 6.96G at 32K
-      # context, which together exceed the card. 8K is the documented stable
-      # point for 8G; raise it only if this host ever goes headless.
-      OLLAMA_CONTEXT_LENGTH = "8192";
+      # Measured on this host 2026-10-04 with Plasma resident (577M of VRAM),
+      # qwen3.5:9b, `ollama ps` for placement and eval_count/eval_duration
+      # for rate:
+      #
+      #   4096   48.5 tok/s   100% GPU      <- the only fully-resident size
+      #   4608   36.7 tok/s   12% CPU
+      #   8192   34.5 tok/s   12% CPU
+      #   16384  24.1 tok/s   19% CPU
+      #
+      # Two things that contradict the earlier assumption here: 8K was never
+      # spill-free on this card, and spilling costs ~30-50%, not the ~5x that
+      # the 12-14B benchmarks show -- those spill 15-19 of 63 layers, this
+      # spills 12-19%. So 16K is a deliberate trade of 29% throughput for 2x
+      # the conversation window, and 24 tok/s still outruns reading speed on
+      # the phone client. Drop to 4096 if latency ever matters more than
+      # context; anything in between is strictly worse than 4096 and no
+      # cheaper than 16384.
+      OLLAMA_CONTEXT_LENGTH = "16384";
     };
   };
 
