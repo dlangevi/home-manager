@@ -385,6 +385,26 @@
       # context; anything in between is strictly worse than 4096 and no
       # cheaper than 16384.
       OLLAMA_CONTEXT_LENGTH = "16384";
+
+      # The KV cache is what pushes 16K off the GPU, so quantize it rather
+      # than shrink it: q8_0 roughly halves cache bytes per token, which is
+      # the difference between spilling 19% and fitting. If it works, the
+      # 29% trade recorded above goes away and 16K runs at the 4096 rate.
+      #
+      # Flash attention is the precondition -- llama.cpp will not take a
+      # quantized KV cache without it. Turing does support it (sm_75 is
+      # where llama.cpp's FA kernels start), but ollama's own default is
+      # conservative, so set it explicitly rather than assuming.
+      #
+      # q8_0 over q4_0 deliberately: q8_0 is the one generally described as
+      # near-lossless, while q4_0 KV measurably degrades long-context recall
+      # -- and recall is the entire reason for running 16K instead of 4096.
+      #
+      # Verify after switching, do not assume: `ollama ps` must say 100% GPU
+      # at 16384. If it still spills, this bought nothing and should be
+      # reverted rather than left in place looking load-bearing.
+      OLLAMA_FLASH_ATTENTION = "1";
+      OLLAMA_KV_CACHE_TYPE = "q8_0";
     };
   };
 
