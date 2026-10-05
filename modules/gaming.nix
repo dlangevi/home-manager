@@ -7,6 +7,8 @@ let
     (builtins.readFile ./gaming/scripts/captureage);
 in
 {
+  imports = [ ./gaming/quiver-launcher.nix ];
+
   home.packages = with pkgs; [
     prismlauncher
     wine
