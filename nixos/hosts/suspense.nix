@@ -376,12 +376,20 @@
 
   # Scoped to source rather than `openFirewall = true`, which would publish the
   # API to the whole LAN unauthenticated -- ollama has no auth of its own. Same
-  # posture as the navidrome/jellyfin rules in ../modules/media-audio.nix.
+  # three subnets, for the same reason, as the navidrome/jellyfin rules in
+  # ../modules/media-audio.nix.
+  #
+  # 192.168.2.0/24 is the one that actually carries the phone: UniFi Teleport
+  # hands the handset a /32 on tun0 and it reaches this box from there, not
+  # from the tailnet. Omitting it fails in a way that looks like a routing
+  # problem rather than a firewall one -- ICMP is allowed by default, so the
+  # host pings fine and only the TCP connect times out.
   networking.firewall.extraCommands =
     let allow = subnet:
       "iptables -A nixos-fw -p tcp -s ${subnet} --dport 11434 -j nixos-fw-accept";
     in ''
       ${allow "100.64.0.0/10"}
+      ${allow "192.168.2.0/24"}
       ${allow "10.0.70.0/24"}
     '';
 
