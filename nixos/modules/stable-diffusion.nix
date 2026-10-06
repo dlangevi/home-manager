@@ -45,9 +45,8 @@ let
   # adherence, and the difference between unreadable glyphs and a legible
   # shop sign. Apache 2.0, unlike SDXL-Turbo's non-commercial licence.
   #
-  # Flux is a DiT with separate text encoders rather than a single
-  # checkpoint, so it is four files rather than one and there is nothing to
-  # convert -- the GGUFs ship quantized.
+  # Flux is a DiT with separate text encoders, so it is four files rather
+  # than one and there is nothing to convert -- the GGUFs ship quantized.
   #
   # Q4_K_S over Q8_0 for the diffusion model is a RAM decision, not a VRAM
   # one: see the note on --offload-to-cpu below. Q8_0 is 12.7G against this
@@ -128,10 +127,28 @@ in
         # 0.65s resident against 1.26s offloaded. That option left with the
         # model.)
         #
-        # The cost is RAM, not VRAM: 11.7G resident, permanently, of which
+        # The cost is RAM, not VRAM: ~12.1G resident, permanently, of which
         # 6.5G is the diffusion model and 5.1G the T5 encoder. On a 31G box
         # that also runs a 6.4G LLM, that is the real budget constraint here
         # and the reason the diffusion model is Q4_K_S rather than Q8_0.
+        #
+        # Measured 2026-10-05, and this box is over that budget: `free` shows
+        # 8G of swap in use and this process carries ~430M of VmSwap. The
+        # visible cost lands on the phone client's "Enhance" feature, which
+        # loads the LLM to rewrite a prompt before generating:
+        #
+        #   9B rewrite, benchmarked alone      ~10s
+        #   9B rewrite, in the real flow       21-26s
+        #   generation right after an LLM load 61.5s  (27.0s otherwise)
+        #
+        # Every rewrite reads the LLM off disk rather than page cache, and
+        # the load evicts enough of this process that the next generation
+        # faults its weights back in.
+        #
+        # Levers, if it matters: the 4b rewriter halves the client-side cost
+        # (37-41s end to end against 50-58s), and a Q4 or Q5 T5 here would
+        # give back ~2.5G -- a quality tradeoff that matters less when an LLM
+        # is writing the prompt anyway. Both are deliberate not-yet choices.
         "--offload-to-cpu"
 
         # Decode the VAE in tiles. This is what makes 1024x1024 possible at

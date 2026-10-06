@@ -80,4 +80,21 @@ in
     type = "Application";
     categories = [ "Network" "InstantMessaging" ];
   };
+
+  # Nothing in the session declares a default browser, so the handler for
+  # http/https was resolved from whichever mimeinfo.cache the asking process
+  # happened to scan first. xdg-open and KIO disagree about that order, which
+  # is why wezterm's ctrl-shift-click landed on the `firefox` that
+  # `programs.firefox.enable` puts in the system profile while `xdg-mime
+  # query` reported floorp. Pin it explicitly.
+  #
+  # Done as an activation step rather than `xdg.mimeApps`, which would replace
+  # ~/.config/mimeapps.list with a read-only store symlink -- discord, signal
+  # and teams register their own url schemes into that file at runtime, and
+  # those registrations would start failing.
+  home.activation.defaultBrowser = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run ${pkgs.xdg-utils}/bin/xdg-mime default floorp.desktop \
+      x-scheme-handler/http x-scheme-handler/https \
+      text/html application/xhtml+xml
+  '';
 }
