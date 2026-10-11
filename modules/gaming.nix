@@ -12,12 +12,38 @@ in
   home.packages = with pkgs; [
     prismlauncher
     wine
-    protontricks
+    # Deployment/profile manager for the Cyberpunk mod stack. Native Linux;
+    # NexusMods.App was the better fit but was discontinued Jan 2026 and
+    # nixpkgs now ships it only as an insecure tombstone. Limo does not do
+    # Cyberpunk dependency resolution -- that stays manual.
+    limo
     vintagestory
     osu-lazer-bin
     mgba
     flips
   ] ++ [ aoe2url captureage ];
+
+  # Per-game, not session-wide: enableSessionWide exports MANGOHUD=1 globally
+  # and would overlay every Vulkan/GL app on the desktop. Opt in instead with a
+  # Steam launch option of `MANGOHUD=1 %command%` -- for Proton titles prefer
+  # the env var over the `mangohud %command%` wrapper, whose LD_PRELOAD does
+  # not reliably carry into the Windows executable.
+  programs.mangohud = {
+    enable = true;
+    settings = {
+      fps = true;
+      frametime = true;
+      frame_timing = 1;
+      gpu_stats = true;
+      gpu_temp = true;
+      vram = true;
+      cpu_stats = true;
+      cpu_temp = true;
+      ram = true;
+      position = "top-left";
+      toggle_hud = "Shift_R+F12";
+    };
+  };
 
   xdg.desktopEntries.AoE2UrlHelper = {
     name = "AoE2 URL Opener";

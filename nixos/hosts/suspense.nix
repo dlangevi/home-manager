@@ -328,6 +328,23 @@
     remotePlay.openFirewall = true;
     localNetworkGameTransfers.openFirewall = true;
     gamescopeSession.enable = true;
+
+    # Steam runs in a buildFHSEnv sandbox, so the Vulkan loader inside it only
+    # reliably sees implicit layers from packages listed here. MangoHud in the
+    # home-manager profile alone is a silent no-op: the game launches, the
+    # layer never loads, no overlay. 64-bit only -- nothing here is a 32-bit
+    # title; those would also need extraPackages32.
+    extraPackages = with pkgs; [ mangohud ];
+
+    # The module overrides this package with `extraCompatPaths`, so it can
+    # actually resolve Proton installs; a protontricks from the home profile
+    # cannot, and silently misbehaves inside its bwrap sandbox.
+    protontricks.enable = true;
+
+    # Selectable per-game from Steam's compatibility dropdown. Kept here rather
+    # than dropped into ~/.steam/root/compatibilitytools.d by hand so the
+    # version is pinned by the flake like everything else.
+    extraCompatPackages = with pkgs; [ proton-ge-bin ];
   };
 
   fonts.packages = with pkgs; [
