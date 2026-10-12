@@ -19,6 +19,9 @@ in
     limo
     vintagestory
     osu-lazer-bin
+    # Switch 1 emulator (Yuzu/Sudachi fork). Needs prod.keys + firmware
+    # supplied by the user at runtime; the package ships neither.
+    eden
     mgba
     flips
   ] ++ [ aoe2url captureage ];
