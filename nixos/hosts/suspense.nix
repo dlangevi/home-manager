@@ -301,8 +301,23 @@
   services.displayManager.defaultSession = "plasmax11";
   services.displayManager.sddm.wayland.enable = false;
 
-  # udev hidraw rule (dlangevi is in group "console" historically)
+  # udev hidraw rule (dlangevi is in group "console" historically).
+  #
+  # uhid carries no ACL by default (crw------- root:root), while uinput gets
+  # one via an existing uaccess rule. Sunshine emulates an Xbox One pad over
+  # uinput and a DualSense over uhid, so the asymmetry shows up as a DS5-only
+  # failure the log reports as a bare permission error:
+  #
+  #   Gamepad 0 will be DualShock 5 controller (auto-selected by client-reported type)
+  #   Unable to create virtual DualShock 5 controller: Permission denied
+  #   Gamepad 0 will be Xbox One controller (default)
+  #
+  # The fallback works, so the only cost is the DualSense touchpad and motion
+  # -- which is why this went unnoticed for a week. uaccess rather than a
+  # group because the consumer is a user service in the seated session, the
+  # same shape the uinput rule already relies on.
   services.udev.extraRules = ''
+      KERNEL=="uhid", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uhid"
       SUBSYSTEMS=="hidraw", ACTION=="add", MODE="0660", GROUP="console"
       SUBSYSTEM=="sound", ACTION=="add", ATTRS{idVendor}=="8888", ATTRS{idProduct}=="1717", TAG+="systemd", ENV{SYSTEMD_WANTS}+="fosi-mc331-mixer.service"
   '';
