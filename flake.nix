@@ -19,7 +19,7 @@
     };
   };
 
-  outputs = { nixpkgs, nixpkgs-unstable, home-manager, dl-herd, plasma-manager, ... }:
+  outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, dl-herd, plasma-manager, ... }:
     let
       system = "x86_64-linux";
       pkgs-unstable = import nixpkgs-unstable { inherit system; config.allowUnfree = true; };
@@ -152,7 +152,7 @@
         inherit pkgs;
         modules = builtins.concatMap (name: features.${name}) featureNames;
         extraSpecialArgs = {
-          inherit username homeDirectory hostname;
+          inherit self username homeDirectory hostname;
           dlsys = dlsysPkg;
           # Threaded through like dlsys so modules/plasma.nix can name the
           # binary by absolute store path. That keeps the plasma feature from
@@ -168,6 +168,19 @@
 
       nixosConfigurations =
         builtins.mapAttrs (host: _: mkNixos host) machines;
+
+      # This flake's nixpkgs, config and overlay included, exposed so it can
+      # stand in for the `nixpkgs` registry entry -- see nix.registry in
+      # modules/base.nix. The point is allowUnfree: a registry nixpkgs
+      # evaluates with an empty config and refuses unfree packages, and the
+      # NIXPKGS_ALLOW_UNFREE escape hatch needs --impure to be readable at
+      # all. Coming from a flake expression instead, allowUnfree survives
+      # pure evaluation, so `nix run nixpkgs#rar` needs no flags.
+      #
+      # Second effect, equally wanted: ad-hoc `nixpkgs#...` commands now
+      # resolve against this flake's locked rev rather than whatever the
+      # global registry last fetched.
+      legacyPackages.${system} = pkgs;
 
       # Expose the home-manager CLI so the dlsys script can invoke it
       # via `nix run .#home-manager` on machines that don't have it

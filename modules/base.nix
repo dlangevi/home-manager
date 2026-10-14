@@ -1,4 +1,4 @@
-{ config, pkgs, username, homeDirectory, dlsys, ... }:
+{ config, pkgs, self, username, homeDirectory, dlsys, ... }:
 
 {
   imports = [
@@ -38,39 +38,38 @@
   #
   #   - Everything this repo builds already works: flake.nix sets
   #     config.allowUnfree globally, which covers rar above, steam, nvidia.
-  #   - Ad-hoc commands do not. `nix run nixpkgs#rar` evaluates the registry's
-  #     nixpkgs with an empty config and refuses, which is the prompt to
-  #     re-run with NIXPKGS_ALLOW_UNFREE=1 that keeps showing up.
+  #   - Ad-hoc commands do not. `nix run nixpkgs#rar` resolves the registry's
+  #     nixpkgs, which evaluates with an empty config and refuses -- the
+  #     prompt to re-run with NIXPKGS_ALLOW_UNFREE=1 that keeps showing up.
   #
-  # Fixing the second needs BOTH lines below. Measured, not assumed:
+  # The obvious fixes both fail, measured rather than assumed:
   #
   #   nix run nixpkgs#unrar                           -> refuses
   #   NIXPKGS_ALLOW_UNFREE=1 nix run nixpkgs#unrar    -> refuses
-  #   nix run --option pure-eval false nixpkgs#unrar  -> refuses
-  #   both together                                   -> works
+  #   NIXPKGS_ALLOW_UNFREE=1 + --impure               -> works, but needs a flag
+  #   pure-eval = false in nix.conf                   -> inert; see below
   #
-  # The var is read via builtins.getEnv, which pure evaluation blocks, so it
-  # is inert on its own; and pure-eval off grants nothing without a var to
-  # read. Flake commands default to pure eval. Turning that default off gives
-  # up a guarantee nothing here relied on -- every build in this repo already
-  # passes --impure, because the flake reads $USER and $HOME.
-  # nix.package is not optional alongside nix.settings -- home-manager
-  # asserts on it, because it shells out to that nix to validate the
-  # generated nix.conf.
-  nix.package = pkgs.nix;
-  nix.settings = {
-    # Carried over deliberately. ~/.config/nix/nix.conf already existed,
-    # hand-written and unmanaged, holding exactly this line -- and the whole
-    # file is generated now, so leaving it out would silently disable flakes
-    # for every command on this machine.
-    experimental-features = [ "nix-command" "flakes" ];
-    pure-eval = false;
-  };
-  home.sessionVariables.NIXPKGS_ALLOW_UNFREE = "1";
+  # The env var is read through builtins.getEnv, which pure evaluation blocks,
+  # so it is dead on its own. Turning pure eval off in nix.conf does not
+  # revive it: flake commands apply pure-eval from the command line *after*
+  # the config files are read, so --option pure-eval false works and the
+  # identical setting in a config file is silently overwritten. Don't bother
+  # putting it there.
+  #
+  # What does work is removing the need for an env var at all. This points
+  # the `nixpkgs` registry entry at this flake, whose legacyPackages is a
+  # nixpkgs that already carries allowUnfree in its own expression -- no env,
+  # so nothing for pure evaluation to object to. home-manager records the
+  # store path of the flake, not the live working tree, so `nix run
+  # nixpkgs#...` neither warns about a dirty repo nor breaks while this one
+  # is mid-edit; it tracks whatever the last switch built.
+  nix.registry.nixpkgs.flake = self;
 
-  # The non-flake path (nix-shell, nix-build, nix-env) honours the env var
-  # too, but only when the environment is inherited. This file covers the
-  # cases where it is not -- cron, a non-interactive `ssh host cmd`.
+  # Still worth setting for the non-flake path -- nix-shell, nix-build and
+  # nix-env are impure already, so the var is live there. The file covers the
+  # cases where the environment is not inherited, like cron or a
+  # non-interactive `ssh host cmd`.
+  home.sessionVariables.NIXPKGS_ALLOW_UNFREE = "1";
   xdg.configFile."nixpkgs/config.nix".text = ''
     { allowUnfree = true; }
   '';
