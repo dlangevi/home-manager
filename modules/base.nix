@@ -87,18 +87,14 @@
     (btop.override { cudaSupport = true; })
     wget
     unzip
-    # unrar extracts only; rar is the proprietary RARLAB binary that also
-    # creates archives. Both are unfree (unrar as unfreeRedistributable, rar
-    # outright), which is why they need the config below as well as being
-    # declared here.
+    # Ships bin/rar and bin/unrar both, so the standalone unrar package is
+    # redundant -- and installing it alongside fails the profile buildEnv on
+    # the clashing name. The only thing given up is extractor version: rar
+    # 7.21 bundles UNRAR 7.21 where the standalone package is at 7.23.
     #
-    # They collide: rar ships bin/unrar too, so installing both fails the
-    # profile buildEnv outright. lowPrio hands the name to the standalone
-    # package, which is the newer of the two extractors -- rar 7.21 bundles
-    # UNRAR 7.21, the standalone one reports 7.23. rar/ itself is unaffected,
-    # nothing else provides that name.
-    unrar
-    (lib.lowPrio rar)
+    # Unfree, so it depends on the allowUnfree in flake.nix as well as this
+    # line.
+    rar
     xclip
     cntr
     jq
