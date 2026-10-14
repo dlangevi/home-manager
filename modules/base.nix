@@ -34,6 +34,47 @@
     nix-direnv.enable = true;
   };
 
+  # Unfree in two separate worlds, and enabling one does nothing for the other:
+  #
+  #   - Everything this repo builds already works: flake.nix sets
+  #     config.allowUnfree globally, which covers rar above, steam, nvidia.
+  #   - Ad-hoc commands do not. `nix run nixpkgs#rar` evaluates the registry's
+  #     nixpkgs with an empty config and refuses, which is the prompt to
+  #     re-run with NIXPKGS_ALLOW_UNFREE=1 that keeps showing up.
+  #
+  # Fixing the second needs BOTH lines below. Measured, not assumed:
+  #
+  #   nix run nixpkgs#unrar                           -> refuses
+  #   NIXPKGS_ALLOW_UNFREE=1 nix run nixpkgs#unrar    -> refuses
+  #   nix run --option pure-eval false nixpkgs#unrar  -> refuses
+  #   both together                                   -> works
+  #
+  # The var is read via builtins.getEnv, which pure evaluation blocks, so it
+  # is inert on its own; and pure-eval off grants nothing without a var to
+  # read. Flake commands default to pure eval. Turning that default off gives
+  # up a guarantee nothing here relied on -- every build in this repo already
+  # passes --impure, because the flake reads $USER and $HOME.
+  # nix.package is not optional alongside nix.settings -- home-manager
+  # asserts on it, because it shells out to that nix to validate the
+  # generated nix.conf.
+  nix.package = pkgs.nix;
+  nix.settings = {
+    # Carried over deliberately. ~/.config/nix/nix.conf already existed,
+    # hand-written and unmanaged, holding exactly this line -- and the whole
+    # file is generated now, so leaving it out would silently disable flakes
+    # for every command on this machine.
+    experimental-features = [ "nix-command" "flakes" ];
+    pure-eval = false;
+  };
+  home.sessionVariables.NIXPKGS_ALLOW_UNFREE = "1";
+
+  # The non-flake path (nix-shell, nix-build, nix-env) honours the env var
+  # too, but only when the environment is inherited. This file covers the
+  # cases where it is not -- cron, a non-interactive `ssh host cmd`.
+  xdg.configFile."nixpkgs/config.nix".text = ''
+    { allowUnfree = true; }
+  '';
+
   home.packages = [ dlsys ] ++ (with pkgs; [
     ripgrep
     fd
@@ -47,6 +88,18 @@
     (btop.override { cudaSupport = true; })
     wget
     unzip
+    # unrar extracts only; rar is the proprietary RARLAB binary that also
+    # creates archives. Both are unfree (unrar as unfreeRedistributable, rar
+    # outright), which is why they need the config below as well as being
+    # declared here.
+    #
+    # They collide: rar ships bin/unrar too, so installing both fails the
+    # profile buildEnv outright. lowPrio hands the name to the standalone
+    # package, which is the newer of the two extractors -- rar 7.21 bundles
+    # UNRAR 7.21, the standalone one reports 7.23. rar/ itself is unaffected,
+    # nothing else provides that name.
+    unrar
+    (lib.lowPrio rar)
     xclip
     cntr
     jq
