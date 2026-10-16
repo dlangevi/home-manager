@@ -31,7 +31,8 @@
     openFirewall = true;
   };
 
-  # udev hidraw rule, plus: deauthorize the builtin Bluetooth radio.
+  # udev hidraw rule, plus: deauthorize the builtin Bluetooth radio, plus:
+  # arm USB remote wakeup so a keypress resumes from S3.
   #
   # The Intel 8087:0a2a is the BT half of the M.2 combo card whose WiFi side
   # is wlp1s0 -- it hangs off an internal USB hub, not PCIe. Its antenna is
@@ -42,9 +43,24 @@
   # across reboots; the two radios have distinct IDs, so this is unambiguous.
   #
   # To undo: drop the authorized="0" line and `nrs`.
+  #
+  # The last two rules are why the box stopped waking on a keypress and had
+  # to be woken at the power button. Suspend here is deep/S3, and in that
+  # path the kernel only sends SET_FEATURE(DEVICE_REMOTE_WAKEUP) to a device
+  # whose power/wakeup is enabled, and xHCI only sets the port wake-enable
+  # bits when the root hub's flag is enabled. Both came up disabled -- the
+  # K400 Plus receiver (046d:c52b) is wake-capable (bmAttributes a0) but was
+  # never armed, so every wake came from PNP0C0C. The flag lives on the
+  # usb_device and is re-derived on each enumeration, so it went away when
+  # the receiver and the Realtek dongle swapped ports while the external
+  # antenna was being fitted. Keyed on IDs, not port paths, for the same
+  # reason as above -- it has already moved from 3-1 to 1-2 once.
+  # 1d6b is the kernel's own vendor ID for root hubs; all four get it.
   services.udev.extraRules = ''
       SUBSYSTEMS=="hidraw", ACTION=="add", MODE="0660", GROUP="console"
       ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="8087", ATTR{idProduct}=="0a2a", ATTR{authorized}="0"
+      ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="1d6b", ATTR{power/wakeup}="enabled"
+      ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="046d", ATTR{idProduct}=="c52b", ATTR{power/wakeup}="enabled"
   '';
 
   # User
