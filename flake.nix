@@ -28,6 +28,7 @@
         config.allowUnfree = true;
         overlays = [(final: prev: {
           itgmania = pkgs-unstable.itgmania;
+          opencode = pkgs-unstable.opencode;
         })];
       };
       username = builtins.getEnv "USER";

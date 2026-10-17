@@ -99,5 +99,6 @@
     cntr
     jq
     mosh
+    opencode
   ]);
 }
