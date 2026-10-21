@@ -53,6 +53,13 @@ in
       local wezterm = require 'wezterm'
       local config = wezterm.config_builder()
 
+      -- WebGpu instead of the default OpenGL/glium front end. Forced after a
+      -- SIGSEGV inside the NVIDIA driver's GL path (libnvidia-eglcore) during
+      -- glium::ops::draw::draw -- wezterm's render call itself, not anything
+      -- this file configures. WebGpu is a different renderer (wgpu/Vulkan)
+      -- that does not go through that code path at all.
+      config.front_end = 'WebGpu'
+
       -- Passthrough profile. Everything below that mirrors tmux -- the C-a
       -- prefix and its whole table, the bare C-arrow and C-hjkl bindings --
       -- exists because wezterm is the outer multiplexer on this machine. Point
