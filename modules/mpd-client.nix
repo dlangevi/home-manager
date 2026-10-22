@@ -74,4 +74,12 @@ in
       inherit port;
     };
   };
+
+  # mpd-mpris doesn't exit on SIGTERM -- the upstream Go binary has no signal
+  # handler -- so systemd's default 90s TimeoutStopSec runs out in full before
+  # SIGKILLing it, and the user manager can't finish stopping until that unit
+  # does. That is the "Stop job is running for User Manager for UID 1000" stall
+  # on every shutdown/reboot. Shortening the timeout just makes the inevitable
+  # kill happen immediately instead of after a minute-and-a-half wait.
+  systemd.user.services.mpd-mpris.Service.TimeoutStopSec = 2;
 }
