@@ -24,11 +24,15 @@
         # MagicDNS name -- with discovery off, this is how the peer is found.
         addresses = [ "tcp://suspense:22000" ];
       };
+      dance = {
+        id = "S6JACA5-QCNDCOX-BDBGHPT-UXV46DN-NYSJKDM-3IGID3O-25VXIYC-N6RL4AN";
+        addresses = [ "tcp://dance:22000" ];
+      };
     };
     settings.folders."sync" = {
       label = "Sync";
       path = "${config.home.homeDirectory}/Sync";
-      devices = [ "console" "suspense" ];
+      devices = [ "console" "suspense" "dance" ];
     };
   };
 }
