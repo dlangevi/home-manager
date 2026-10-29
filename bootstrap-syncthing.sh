@@ -9,29 +9,47 @@
 # modules/claude.nix's symlinks into ~/Sync/claude (CLAUDE.md, commands/,
 # skills/, memory/) point at nothing.
 #
-# Run this AFTER a `dlsys switch` (or `dlsys init`) has already applied the
-# `base` feature -- that's what starts syncthing in the first place.
+# Meant to be dropped into a bootstrap sequence right after kicking off the
+# first `dlsys switch` (or `dlsys init`) -- the thing that applies the `base`
+# feature and so starts syncthing in the first place. That switch can take a
+# while (first-ever nix build), so this waits for the service rather than
+# requiring it to already be up -- the two don't need careful ordering by the
+# caller, just "switch started, then this."
 set -euo pipefail
 
 if ! command -v curl >/dev/null 2>&1; then
   exec nix shell nixpkgs#curl --command "$0" "$@"
 fi
 
-if ! systemctl --user is-active --quiet syncthing.service; then
-  echo "syncthing.service is not running. Run 'dlsys switch' first (it's part" >&2
-  echo "of the 'base' feature), then re-run this script." >&2
-  exit 1
-fi
+echo "Waiting for syncthing.service (started by the 'base' feature)..."
+waited=0
+timeout=300
+until systemctl --user is-active --quiet syncthing.service; do
+  if (( waited >= timeout )); then
+    echo "syncthing.service still isn't active after ${timeout}s. Make sure" >&2
+    echo "'dlsys switch' (or 'dlsys init') has actually completed, then" >&2
+    echo "re-run this script." >&2
+    exit 1
+  fi
+  sleep 2
+  waited=$((waited + 2))
+done
 
 # home-manager/upstream syncthing moved its state dir off ~/.config to the
 # XDG state dir a while back; this is where a current nixpkgs syncthing puts
-# it, cert included.
+# it, cert included. The service reporting active doesn't guarantee the
+# config file (written on first start) has landed yet, so wait a bit more
+# rather than failing outright.
 config="$HOME/.local/state/syncthing/config.xml"
-[[ -f "$config" ]] || {
-  echo "No $config yet -- syncthing hasn't finished its first start. Wait a" >&2
-  echo "few seconds and re-run." >&2
-  exit 1
-}
+waited=0
+until [[ -f "$config" ]]; do
+  if (( waited >= 30 )); then
+    echo "syncthing.service is active but $config never appeared." >&2
+    exit 1
+  fi
+  sleep 1
+  waited=$((waited + 1))
+done
 
 api_key=$(grep -oP '(?<=<apikey>)[^<]+' "$config")
 gui_addr=$(grep -oP '(?<=<address>)[^<]+' "$config" | grep -v '^dynamic$' | head -1)
