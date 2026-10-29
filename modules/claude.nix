@@ -52,15 +52,34 @@ in
   # first hop inside the read-only home-manager-files store dir, so every such
   # write fails with EROFS. Link them straight at ~/Sync/claude so the tmpfile
   # lands in a writable directory. The read-only ones stay on home.file.
-  home.file.".claude/commands".source      = link "${syncRoot}/commands";
-  # Personal skills, shared across every workspace rather than living in one
-  # project's .claude/. The asana skill in particular is needed anywhere the
-  # task system comes up, not just in ~/auto/research.
-  home.file.".claude/skills".source        = link "${syncRoot}/skills";
+  #
+  # Both of these are guarded on the target existing. On a brand-new machine,
+  # Syncthing hasn't necessarily pulled ~/Sync/claude down yet (it has no way
+  # to declare its own pairing -- see bootstrap-syncthing.sh), so linking
+  # unconditionally would leave every one of these dangling until the first
+  # sync finishes. Skipping them instead just means Claude Code falls back to
+  # its own defaults until then; re-running `dlsys switch` after syncing
+  # finishes re-evaluates these checks and fills the links in.
+  home.file = lib.optionalAttrs (builtins.pathExists "${syncRoot}/commands") {
+    ".claude/commands".source = link "${syncRoot}/commands";
+  } // lib.optionalAttrs (builtins.pathExists "${syncRoot}/skills") {
+    # Personal skills, shared across every workspace rather than living in
+    # one project's .claude/. The asana skill in particular is needed
+    # anywhere the task system comes up, not just in ~/auto/research.
+    ".claude/skills".source = link "${syncRoot}/skills";
+  };
 
   home.activation.claudeWritableLinks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    # Previously ~/.claude always existed by the time this ran, as a side
+    # effect of the home.file commands/skills links above creating it. Now
+    # that those are conditional too, a machine with neither synced yet would
+    # have nothing create the directory at all -- do it explicitly instead of
+    # depending on that side effect.
+    mkdir -p "${homeDirectory}/.claude"
     for f in CLAUDE.md settings.json; do
-      run ln -sfn "${syncRoot}/$f" "${homeDirectory}/.claude/$f"
+      if [ -e "${syncRoot}/$f" ]; then
+        run ln -sfn "${syncRoot}/$f" "${homeDirectory}/.claude/$f"
+      fi
     done
   '';
 
