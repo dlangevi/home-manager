@@ -8,10 +8,19 @@ use crate::machines;
 use crate::runner::Runner;
 use crate::switch;
 
-/// Asking the user yes/no. A trait so `init`'s selection logic can be tested
-/// without a terminal.
+/// Asking the user yes/no, or for a line of free-form text. A trait so
+/// `init`'s selection logic can be tested without a terminal.
+///
+/// `ask` has a default body that refuses: most `Prompt` impls (rollout's
+/// `Always`, the feature-selection `ScriptedPrompt` below) only ever need
+/// `confirm`, and giving `ask` a default means adding it here does not force
+/// every existing implementor to grow a method it has no use for.
 pub trait Prompt {
     fn confirm(&self, question: &str) -> Result<bool>;
+
+    fn ask(&self, _question: &str) -> Result<String> {
+        Err(anyhow!("this prompt cannot ask for free-form input"))
+    }
 }
 
 /// Reads from the real terminal.
@@ -32,6 +41,113 @@ impl Prompt for TtyPrompt {
         BufReader::new(tty).read_line(&mut line)?;
         Ok(matches!(line.trim(), "y" | "Y"))
     }
+
+    fn ask(&self, question: &str) -> Result<String> {
+        use std::io::{BufRead, BufReader};
+        let tty = std::fs::File::open("/dev/tty")
+            .map_err(|e| anyhow!("init needs a terminal to ask a question: {e}"))?;
+        print!("{question} ");
+        std::io::stdout().flush()?;
+        let mut line = String::new();
+        BufReader::new(tty).read_line(&mut line)?;
+        Ok(line.trim().to_string())
+    }
+}
+
+/// Make sure `git commit` has an identity to stamp commits with.
+///
+/// `git config --get` reads the merged local+global+system config, so this
+/// only prompts when neither already supplies a value -- it does not fight an
+/// identity set some other way. The common gap is a brand-new machine: Nix,
+/// home-manager and this repo clone fine with no git identity at all, and the
+/// first `dlsys init` is the first command here that actually needs one.
+fn git_config_get(runner: &dyn Runner, dir: &Path, key: &str) -> Result<Option<String>> {
+    let out = runner.capture("git", &["config", "--get", key], dir)?;
+    Ok((out.ok && !out.stdout.is_empty()).then_some(out.stdout))
+}
+
+pub fn ensure_git_identity(runner: &dyn Runner, dir: &Path, prompt: &dyn Prompt) -> Result<()> {
+    if git_config_get(runner, dir, "user.name")?.is_none() {
+        let name = prompt.ask("No git user.name configured. Name for commits:")?;
+        if !runner.run("git", &["config", "--global", "user.name", &name], dir)? {
+            return Err(anyhow!("git config --global user.name failed"));
+        }
+    }
+    if git_config_get(runner, dir, "user.email")?.is_none() {
+        let email = prompt.ask("No git user.email configured. Email for commits:")?;
+        if !runner.run("git", &["config", "--global", "user.email", &email], dir)? {
+            return Err(anyhow!("git config --global user.email failed"));
+        }
+    }
+    Ok(())
+}
+
+/// Is `git@github.com` reachable with whatever key ssh would offer it?
+///
+/// `git ls-remote` over ssh, not a bare `ssh -T`: GitHub's SSH endpoint never
+/// grants a shell, so a *successful* `ssh -T` auth still exits non-zero and
+/// only says so in a greeting on stderr -- which `Runner::capture` does not
+/// even collect (it inherits stderr so nix's progress output keeps reaching
+/// the terminal). `ls-remote` against a real repo exits 0 on success and
+/// non-zero on auth failure, so it fits the existing `ok`-only seam exactly,
+/// and it is a closer proxy for what's actually about to happen: fetching
+/// dl-herd as a flake input.
+fn github_ssh_authenticated(runner: &dyn Runner, dir: &Path) -> bool {
+    runner
+        .capture("git", &["ls-remote", "git@github.com:dlangevi/dl-herd.git"], dir)
+        .map(|o| o.ok)
+        .unwrap_or(false)
+}
+
+/// Make sure this machine can fetch the private flake inputs (dl-herd and any
+/// other `git+ssh://git@github.com/...` input) before `init` tries to.
+///
+/// A brand-new machine has Nix and a repo clone but no SSH identity GitHub
+/// has seen before, so the first `nix build`/`home-manager switch` that
+/// touches those inputs fails with a bare "Permission denied (publickey)" and
+/// no hint about what to do. This generates a key if none exists, prints it,
+/// and waits for the human to add it at github.com/settings/ssh/new before
+/// letting init proceed to the switch that needs it.
+pub fn ensure_github_ssh(runner: &dyn Runner, dir: &Path, prompt: &dyn Prompt) -> Result<()> {
+    if github_ssh_authenticated(runner, dir) {
+        return Ok(());
+    }
+
+    let home = std::env::var("HOME").map_err(|_| anyhow!("HOME is not set"))?;
+    let key_path = format!("{home}/.ssh/id_ed25519");
+    let pub_path = format!("{key_path}.pub");
+
+    if !Path::new(&pub_path).exists() {
+        std::fs::create_dir_all(format!("{home}/.ssh"))
+            .map_err(|e| anyhow!("could not create ~/.ssh: {e}"))?;
+        let label = prompt.ask("No SSH key found. Label for the new key (e.g. your email):")?;
+        if !runner.run(
+            "ssh-keygen",
+            &["-t", "ed25519", "-C", &label, "-f", &key_path, "-N", ""],
+            dir,
+        )? {
+            return Err(anyhow!("ssh-keygen failed"));
+        }
+    }
+
+    let pubkey = std::fs::read_to_string(&pub_path)
+        .map_err(|e| anyhow!("could not read {pub_path}: {e}"))?;
+
+    loop {
+        println!(
+            "\nAdd this key at https://github.com/settings/ssh/new, then continue:\n\n{}\n",
+            pubkey.trim()
+        );
+        if !prompt.confirm("Added it to GitHub?")? {
+            return Err(anyhow!(
+                "GitHub SSH access not confirmed; fetching private flake inputs (dl-herd) will fail"
+            ));
+        }
+        if github_ssh_authenticated(runner, dir) {
+            return Ok(());
+        }
+        println!("Still not authenticating as git@github.com.");
+    }
 }
 
 /// Which features to register, given the catalog and an answer for each.
@@ -51,8 +167,62 @@ pub fn select_features(catalog: &[String], prompt: &dyn Prompt) -> Result<Vec<St
     Ok(chosen)
 }
 
+/// Copy this NixOS machine's generated config into the repo, if it is not
+/// there already.
+///
+/// `nixosConfigurations.<host>` (flake.nix's `mkNixos`) hard-requires
+/// `nixos/hosts/<host>.nix` to exist -- unlike the hardware module, there is
+/// no `/etc/nixos` fallback for it. A fresh NixOS install has never had a
+/// reason to create that file, so without this step the first `dlsys switch
+/// nixos` on a new machine fails on a missing-file eval error that does not
+/// say what to do about it.
+///
+/// This copies `/etc/nixos/configuration.nix` and
+/// `/etc/nixos/hardware-configuration.nix` verbatim, exactly as CLAUDE.md's
+/// migration note for the hardware file already does by hand -- no attempt
+/// to merge the generated boilerplate into `nixos/common.nix`. That editing
+/// is a judgment call for a human, after the files are safely under version
+/// control; copying is not.
+fn ensure_nixos_host_files(dir: &Path, host: &str) -> Result<Vec<String>> {
+    if !switch::is_nixos_host() {
+        return Ok(Vec::new());
+    }
+
+    let mut added = Vec::new();
+    let pairs = [
+        ("/etc/nixos/configuration.nix", "nixos/hosts"),
+        ("/etc/nixos/hardware-configuration.nix", "nixos/hardware"),
+    ];
+    for (src, subdir) in pairs {
+        let src = Path::new(src);
+        if !src.is_file() {
+            continue;
+        }
+        let dst_dir = dir.join(subdir);
+        let dst = dst_dir.join(format!("{host}.nix"));
+        if dst.exists() {
+            continue;
+        }
+        std::fs::create_dir_all(&dst_dir)
+            .map_err(|e| anyhow!("could not create {}: {e}", dst_dir.display()))?;
+        std::fs::copy(src, &dst)
+            .map_err(|e| anyhow!("could not copy {} to {}: {e}", src.display(), dst.display()))?;
+        added.push(format!("{subdir}/{host}.nix"));
+    }
+
+    if !added.is_empty() {
+        println!(
+            "Copied /etc/nixos config for {host} into the repo verbatim ({}).\n\
+             Trim what nixos/common.nix already covers before relying on it for a real switch.",
+            added.join(", ")
+        );
+    }
+    Ok(added)
+}
+
 pub fn run(runner: &dyn Runner, dir: &Path, host: &str, prompt: &dyn Prompt) -> Result<()> {
     crate::repo::require_flake(dir)?;
+    ensure_git_identity(runner, dir, prompt)?;
 
     let existing = machines::load(runner, dir)?;
     if let Some(features) = existing.get(host) {
@@ -75,13 +245,18 @@ pub fn run(runner: &dyn Runner, dir: &Path, host: &str, prompt: &dyn Prompt) -> 
     std::fs::write(&path, &updated)
         .map_err(|e| anyhow!("could not write {}: {e}", path.display()))?;
 
-    if !runner.run("git", &["add", "machines.nix"], dir)? {
+    let nixos_files = ensure_nixos_host_files(dir, host)?;
+    let mut add_args: Vec<&str> = vec!["add", "machines.nix"];
+    add_args.extend(nixos_files.iter().map(String::as_str));
+    if !runner.run("git", &add_args, dir)? {
         return Err(anyhow!("git add machines.nix failed"));
     }
     let msg = format!("chore: register {host} with features {}", features.join(" "));
     if !runner.run("git", &["commit", "-m", &msg], dir)? {
         return Err(anyhow!("git commit failed"));
     }
+
+    ensure_github_ssh(runner, dir, prompt)?;
 
     let flake = format!(".#{host}");
     if !switch::hm(runner, dir, &["switch", "--impure", "--flake", &flake])? {
@@ -166,10 +341,11 @@ mod tests {
     #[test]
     fn refuses_a_host_that_is_already_registered() {
         let dir = temp_repo("already", "{\n  \"suspense\" = [ \"base\" \"dev\" ];\n}\n");
-        let f = FakeRunner::new(&[(
-            "machines.nix",
-            Output::out(r#"{"suspense":["base","dev"]}"#),
-        )]);
+        let f = FakeRunner::new(&[
+            ("machines.nix", Output::out(r#"{"suspense":["base","dev"]}"#)),
+            ("config --get user.name", Output::out("Test User")),
+            ("config --get user.email", Output::out("test@example.com")),
+        ]);
         let p = ScriptedPrompt::new(&[]);
         let err = run(&f, &dir, "suspense", &p).unwrap_err().to_string();
 
@@ -200,6 +376,8 @@ mod tests {
         let f = FakeRunner::new(&[
             ("--file machines.nix", Output::out(r#"{"console":["base"],"suspense":["base","dev"]}"#)),
             ("--file features.nix", Output::out(r#"["base","dev","gaming"]"#)),
+            ("config --get user.name", Output::out("Test User")),
+            ("config --get user.email", Output::out("test@example.com")),
         ]);
         let p = ScriptedPrompt::new(&["gaming"]);
 
