@@ -1,6 +1,7 @@
 {
   "console"  = [ "base" "desktop-apps" "mpd-client" "soulseek" "herd" "wake-suspense" ];
   "dance"    = [ "base" "desktop-apps" "streaming" "music-server" "snapclient" "mpd-client" "herd" ];
+  "nixos" = [ "base" "desktop-apps" "herd" ];
   # slskd (nixos/modules/slskd.nix) is the acquisition backend for
   # the album-requests ingestion queue (~/auto/media-services) -- Nicotine+ has no API a script could ever
   # drive. Nicotine+ ("soulseek" feature) stays on console and suspense
