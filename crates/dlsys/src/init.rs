@@ -167,55 +167,95 @@ pub fn select_features(catalog: &[String], prompt: &dyn Prompt) -> Result<Vec<St
     Ok(chosen)
 }
 
-/// Copy this NixOS machine's generated config into the repo, if it is not
-/// there already.
+/// Pull `system.stateVersion` out of a generated `configuration.nix`.
 ///
-/// `nixosConfigurations.<host>` (flake.nix's `mkNixos`) hard-requires
-/// `nixos/hosts/<host>.nix` to exist -- unlike the hardware module, there is
-/// no `/etc/nixos` fallback for it. A fresh NixOS install has never had a
-/// reason to create that file, so without this step the first `dlsys switch
-/// nixos` on a new machine fails on a missing-file eval error that does not
-/// say what to do about it.
+/// Looks for an uncommented `system.stateVersion = "...";` line --
+/// nixos-generate-config always emits this, never commented out, which is
+/// why a plain `strip_prefix` search (no regex dependency) is enough.
+fn extract_state_version(configuration_nix: &str) -> Option<String> {
+    configuration_nix.lines().find_map(|line| {
+        let line = line.trim();
+        let rest = line.strip_prefix("system.stateVersion")?.trim_start();
+        let rest = rest.strip_prefix('=')?.trim_start();
+        let rest = rest.strip_prefix('"')?;
+        let end = rest.find('"')?;
+        Some(rest[..end].to_string())
+    })
+}
+
+/// Copy this machine's detected hardware facts into the repo, verbatim.
 ///
-/// This copies `/etc/nixos/configuration.nix` and
-/// `/etc/nixos/hardware-configuration.nix` verbatim, exactly as CLAUDE.md's
-/// migration note for the hardware file already does by hand -- no attempt
-/// to merge the generated boilerplate into `nixos/common.nix`. That editing
-/// is a judgment call for a human, after the files are safely under version
-/// control; copying is not.
+/// Disk UUIDs and kernel modules can't be templated -- there is nothing to
+/// generate here, only to copy. Mirrors the migration CLAUDE.md already
+/// documents by hand for `nixos/hardware/<host>.nix`.
+fn ensure_nixos_hardware_file(dir: &Path, host: &str) -> Result<Option<String>> {
+    let src = Path::new("/etc/nixos/hardware-configuration.nix");
+    if !src.is_file() {
+        return Ok(None);
+    }
+    let dst_dir = dir.join("nixos/hardware");
+    let dst = dst_dir.join(format!("{host}.nix"));
+    if dst.exists() {
+        return Ok(None);
+    }
+    std::fs::create_dir_all(&dst_dir)
+        .map_err(|e| anyhow!("could not create {}: {e}", dst_dir.display()))?;
+    std::fs::copy(src, &dst)
+        .map_err(|e| anyhow!("could not copy {} to {}: {e}", src.display(), dst.display()))?;
+    Ok(Some(format!("nixos/hardware/{host}.nix")))
+}
+
+/// Seed `nixos/hosts/<host>.nix` -- not a copy, a minimal starting point.
+///
+/// `nixosConfigurations.<host>` (flake.nix's `mkNixos`) hard-requires this
+/// file to exist, with no `/etc/nixos` fallback the way the hardware module
+/// has one, so a fresh NixOS install needs *something* here before the first
+/// `dlsys switch nixos`. The only two facts every host file actually needs
+/// -- confirmed by diffing all three committed ones against
+/// `nixos/common.nix` -- are the hostname (already known: it's `host`) and
+/// stateVersion (never in common.nix, must come from the real machine, must
+/// never be guessed or bumped). Everything else in a stock generated
+/// `configuration.nix` either duplicates common.nix already or is installer
+/// boilerplate with no home in this repo; every real host file was
+/// hand-grown from something this small, not trimmed down from something
+/// large, so that is the shape to generate too.
+fn ensure_nixos_host_file(dir: &Path, host: &str) -> Result<Option<String>> {
+    let dst = dir.join("nixos/hosts").join(format!("{host}.nix"));
+    if dst.exists() {
+        return Ok(None);
+    }
+    let generated = std::fs::read_to_string("/etc/nixos/configuration.nix").ok();
+    let state_version = generated.as_deref().and_then(extract_state_version).ok_or_else(|| {
+        anyhow!(
+            "could not find system.stateVersion in /etc/nixos/configuration.nix; \
+             create nixos/hosts/{host}.nix by hand before running 'dlsys switch nixos'"
+        )
+    })?;
+
+    let dst_dir = dir.join("nixos/hosts");
+    std::fs::create_dir_all(&dst_dir)
+        .map_err(|e| anyhow!("could not create {}: {e}", dst_dir.display()))?;
+    let contents = format!(
+        "{{ ... }}:\n\n{{\n  networking.hostName = \"{host}\";\n  system.stateVersion = \"{state_version}\";\n}}\n"
+    );
+    std::fs::write(&dst, contents).map_err(|e| anyhow!("could not write {}: {e}", dst.display()))?;
+    Ok(Some(format!("nixos/hosts/{host}.nix")))
+}
+
+/// Set up this NixOS machine's repo-tracked config, if it is not there
+/// already -- a generated minimal `hosts/<host>.nix` plus a verbatim-copied
+/// `hardware/<host>.nix`. No-op on a non-NixOS machine.
 fn ensure_nixos_host_files(dir: &Path, host: &str) -> Result<Vec<String>> {
     if !switch::is_nixos_host() {
         return Ok(Vec::new());
     }
 
     let mut added = Vec::new();
-    let pairs = [
-        ("/etc/nixos/configuration.nix", "nixos/hosts"),
-        ("/etc/nixos/hardware-configuration.nix", "nixos/hardware"),
-    ];
-    for (src, subdir) in pairs {
-        let src = Path::new(src);
-        if !src.is_file() {
-            continue;
-        }
-        let dst_dir = dir.join(subdir);
-        let dst = dst_dir.join(format!("{host}.nix"));
-        if dst.exists() {
-            continue;
-        }
-        std::fs::create_dir_all(&dst_dir)
-            .map_err(|e| anyhow!("could not create {}: {e}", dst_dir.display()))?;
-        std::fs::copy(src, &dst)
-            .map_err(|e| anyhow!("could not copy {} to {}: {e}", src.display(), dst.display()))?;
-        added.push(format!("{subdir}/{host}.nix"));
-    }
+    added.extend(ensure_nixos_host_file(dir, host)?);
+    added.extend(ensure_nixos_hardware_file(dir, host)?);
 
     if !added.is_empty() {
-        println!(
-            "Copied /etc/nixos config for {host} into the repo verbatim ({}).\n\
-             Trim what nixos/common.nix already covers before relying on it for a real switch.",
-            added.join(", ")
-        );
+        println!("Wrote NixOS config for {host}: {}", added.join(", "));
     }
     Ok(added)
 }
@@ -275,6 +315,36 @@ mod tests {
     use crate::runner::{FakeRunner, Output};
     use std::path::PathBuf;
     use std::sync::Mutex;
+
+    #[test]
+    fn extract_state_version_reads_a_normal_generated_line() {
+        let generated = "{ config, lib, pkgs, ... }:\n{\n  system.stateVersion = \"24.11\";\n}\n";
+        assert_eq!(extract_state_version(generated), Some("24.11".to_string()));
+    }
+
+    #[test]
+    fn extract_state_version_ignores_a_trailing_comment() {
+        let generated = "system.stateVersion = \"23.11\"; # Did you read the comment?\n";
+        assert_eq!(extract_state_version(generated), Some("23.11".to_string()));
+    }
+
+    #[test]
+    fn extract_state_version_tolerates_extra_whitespace() {
+        let generated = "  system.stateVersion   =   \"25.05\"  ;\n";
+        assert_eq!(extract_state_version(generated), Some("25.05".to_string()));
+    }
+
+    #[test]
+    fn extract_state_version_is_none_when_absent() {
+        let generated = "{ config, ... }:\n{\n  networking.hostName = \"nixos\";\n}\n";
+        assert_eq!(extract_state_version(generated), None);
+    }
+
+    #[test]
+    fn extract_state_version_ignores_a_commented_out_line() {
+        let generated = "# system.stateVersion = \"24.11\";\n";
+        assert_eq!(extract_state_version(generated), None);
+    }
 
     /// Answers `true` for the named features, `false` for everything else,
     /// and records what it was asked.

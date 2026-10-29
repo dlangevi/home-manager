@@ -72,6 +72,12 @@ The file must be `git add`ed before it takes effect -- pure eval only sees
 the git tree, so an untracked hardware file silently falls back to
 `/etc/nixos`.
 
+`nixos/hosts/<name>.nix` has no such fallback -- it must exist before
+`nixosConfigurations.<name>` evaluates at all. `dlsys init` seeds it
+automatically on a NixOS machine with just `networking.hostName` and
+`system.stateVersion` (scraped from `/etc/nixos/configuration.nix`); grow it
+by hand from there, the same way console/dance/suspense did.
+
 Put a program in **NixOS** (`nixos/common.nix` or `nixos/hosts/<name>.nix`)
 if any of:
 - It needs root or affects other users.
