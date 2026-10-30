@@ -167,20 +167,31 @@ pub fn select_features(catalog: &[String], prompt: &dyn Prompt) -> Result<Vec<St
     Ok(chosen)
 }
 
-/// Pull `system.stateVersion` out of a generated `configuration.nix`.
+/// Drop the generated config's own `./hardware-configuration.nix` import.
 ///
-/// Looks for an uncommented `system.stateVersion = "...";` line --
-/// nixos-generate-config always emits this, never commented out, which is
-/// why a plain `strip_prefix` search (no regex dependency) is enough.
-fn extract_state_version(configuration_nix: &str) -> Option<String> {
-    configuration_nix.lines().find_map(|line| {
-        let line = line.trim();
-        let rest = line.strip_prefix("system.stateVersion")?.trim_start();
-        let rest = rest.strip_prefix('=')?.trim_start();
-        let rest = rest.strip_prefix('"')?;
-        let end = rest.find('"')?;
-        Some(rest[..end].to_string())
-    })
+/// `nixos-generate-config` always emits `imports = [ ./hardware-configuration.nix ];`
+/// (usually as its own list item on its own line). That relative path means
+/// something different once this file is copied to `nixos/hosts/<host>.nix`
+/// -- it would resolve to `nixos/hosts/hardware-configuration.nix`, which
+/// does not exist, failing eval outright. `flake.nix`'s `mkNixos` already
+/// loads the hardware module separately (`nixos/hardware/<host>.nix` or the
+/// `/etc/nixos` fallback), so the reference is both wrong and redundant here
+/// -- just drop the line.
+///
+/// Line-based rather than a real parse: this only has to handle the
+/// boilerplate's own standalone-list-item shape, not arbitrary Nix. A
+/// hand-edited `configuration.nix` that crams another import onto the same
+/// line would lose that import silently -- rare enough for a freshly
+/// generated file to accept, but worth knowing if this file is ever reused
+/// for something hand-edited.
+fn strip_hardware_import(configuration_nix: &str) -> String {
+    let mut out: String = configuration_nix
+        .lines()
+        .filter(|line| !line.contains("hardware-configuration.nix"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    out.push('\n');
+    out
 }
 
 /// Copy this machine's detected hardware facts into the repo, verbatim.
@@ -205,46 +216,60 @@ fn ensure_nixos_hardware_file(dir: &Path, host: &str) -> Result<Option<String>> 
     Ok(Some(format!("nixos/hardware/{host}.nix")))
 }
 
-/// Seed `nixos/hosts/<host>.nix` -- not a copy, a minimal starting point.
+/// Copy `nixos/hosts/<host>.nix` from the generated `configuration.nix`.
 ///
 /// `nixosConfigurations.<host>` (flake.nix's `mkNixos`) hard-requires this
 /// file to exist, with no `/etc/nixos` fallback the way the hardware module
 /// has one, so a fresh NixOS install needs *something* here before the first
-/// `dlsys switch nixos`. The only two facts every host file actually needs
-/// -- confirmed by diffing all three committed ones against
-/// `nixos/common.nix` -- are the hostname (already known: it's `host`) and
-/// stateVersion (never in common.nix, must come from the real machine, must
-/// never be guessed or bumped). Everything else in a stock generated
-/// `configuration.nix` either duplicates common.nix already or is installer
-/// boilerplate with no home in this repo; every real host file was
-/// hand-grown from something this small, not trimmed down from something
-/// large, so that is the shape to generate too.
+/// `dlsys switch nixos`.
+///
+/// This used to generate a minimal file instead (just `networking.hostName`
+/// and `system.stateVersion`), on the theory that everything else in a
+/// generated `configuration.nix` either duplicates `nixos/common.nix` or is
+/// inert installer boilerplate with no home in this repo. That was wrong in
+/// a way that caused real damage on a real machine: the generated file is
+/// also where the installer puts facts that have no other home at all --
+/// most importantly the user account (which groups it's in, what shell it
+/// gets, whatever password mechanism was actually applied to the real
+/// disk), and potentially a non-US keyboard layout. Dropping that block
+/// entirely, trusting `users.mutableUsers`'s default to leave the account
+/// alone, still left a real machine's primary account effectively locked out
+/// after a reboot.
+///
+/// So: copy the whole file (see `strip_hardware_import` for the one thing
+/// that has to change). Anywhere it duplicates `nixos/common.nix` with an
+/// identical value is harmless -- the option types most of this boilerplate
+/// uses (bool, str, int) merge duplicate *identical* definitions silently
+/// (`mergeEqualOption` in nixpkgs' `lib/options.nix`). Anywhere it genuinely
+/// conflicts -- a different keyboard layout, say -- the build fails loudly
+/// at `dlsys switch` time with "conflicting definition values" naming the
+/// option, which is a far better failure mode than silently losing
+/// functionality that's only discovered after a reboot. Trimming the
+/// redundant parts into `nixos/common.nix` is a cleanup worth doing once the
+/// file is safely under version control, not a precondition for it working.
 fn ensure_nixos_host_file(dir: &Path, host: &str) -> Result<Option<String>> {
+    let src = Path::new("/etc/nixos/configuration.nix");
+    if !src.is_file() {
+        return Ok(None);
+    }
     let dst = dir.join("nixos/hosts").join(format!("{host}.nix"));
     if dst.exists() {
         return Ok(None);
     }
-    let generated = std::fs::read_to_string("/etc/nixos/configuration.nix").ok();
-    let state_version = generated.as_deref().and_then(extract_state_version).ok_or_else(|| {
-        anyhow!(
-            "could not find system.stateVersion in /etc/nixos/configuration.nix; \
-             create nixos/hosts/{host}.nix by hand before running 'dlsys switch nixos'"
-        )
-    })?;
+    let generated = std::fs::read_to_string(src)
+        .map_err(|e| anyhow!("could not read {}: {e}", src.display()))?;
+    let contents = strip_hardware_import(&generated);
 
     let dst_dir = dir.join("nixos/hosts");
     std::fs::create_dir_all(&dst_dir)
         .map_err(|e| anyhow!("could not create {}: {e}", dst_dir.display()))?;
-    let contents = format!(
-        "{{ ... }}:\n\n{{\n  networking.hostName = \"{host}\";\n  system.stateVersion = \"{state_version}\";\n}}\n"
-    );
     std::fs::write(&dst, contents).map_err(|e| anyhow!("could not write {}: {e}", dst.display()))?;
     Ok(Some(format!("nixos/hosts/{host}.nix")))
 }
 
 /// Set up this NixOS machine's repo-tracked config, if it is not there
-/// already -- a generated minimal `hosts/<host>.nix` plus a verbatim-copied
-/// `hardware/<host>.nix`. No-op on a non-NixOS machine.
+/// already -- `hosts/<host>.nix` and `hardware/<host>.nix`, both copied
+/// verbatim from what's already on disk. No-op on a non-NixOS machine.
 fn ensure_nixos_host_files(dir: &Path, host: &str) -> Result<Vec<String>> {
     if !switch::is_nixos_host() {
         return Ok(Vec::new());
@@ -255,7 +280,12 @@ fn ensure_nixos_host_files(dir: &Path, host: &str) -> Result<Vec<String>> {
     added.extend(ensure_nixos_hardware_file(dir, host)?);
 
     if !added.is_empty() {
-        println!("Wrote NixOS config for {host}: {}", added.join(", "));
+        println!(
+            "Copied NixOS config for {host} into the repo: {}.\n\
+             Worth a look for anything that now duplicates nixos/common.nix --\n\
+             harmless if left, but safe to trim by hand once it's committed.",
+            added.join(", ")
+        );
     }
     Ok(added)
 }
@@ -317,33 +347,23 @@ mod tests {
     use std::sync::Mutex;
 
     #[test]
-    fn extract_state_version_reads_a_normal_generated_line() {
-        let generated = "{ config, lib, pkgs, ... }:\n{\n  system.stateVersion = \"24.11\";\n}\n";
-        assert_eq!(extract_state_version(generated), Some("24.11".to_string()));
+    fn strip_hardware_import_drops_the_standalone_list_item() {
+        let generated = "{ config, ... }:\n{\n  imports = [\n    ./hardware-configuration.nix\n  ];\n  networking.hostName = \"nixos\";\n}\n";
+        let stripped = strip_hardware_import(generated);
+        assert!(!stripped.contains("hardware-configuration.nix"), "{stripped}");
+        assert!(stripped.contains("networking.hostName"), "{stripped}");
     }
 
     #[test]
-    fn extract_state_version_ignores_a_trailing_comment() {
-        let generated = "system.stateVersion = \"23.11\"; # Did you read the comment?\n";
-        assert_eq!(extract_state_version(generated), Some("23.11".to_string()));
+    fn strip_hardware_import_handles_the_single_line_form() {
+        let generated = "imports = [ ./hardware-configuration.nix ];\n";
+        assert_eq!(strip_hardware_import(generated), "\n");
     }
 
     #[test]
-    fn extract_state_version_tolerates_extra_whitespace() {
-        let generated = "  system.stateVersion   =   \"25.05\"  ;\n";
-        assert_eq!(extract_state_version(generated), Some("25.05".to_string()));
-    }
-
-    #[test]
-    fn extract_state_version_is_none_when_absent() {
-        let generated = "{ config, ... }:\n{\n  networking.hostName = \"nixos\";\n}\n";
-        assert_eq!(extract_state_version(generated), None);
-    }
-
-    #[test]
-    fn extract_state_version_ignores_a_commented_out_line() {
-        let generated = "# system.stateVersion = \"24.11\";\n";
-        assert_eq!(extract_state_version(generated), None);
+    fn strip_hardware_import_is_a_noop_without_a_reference() {
+        let generated = "{ ... }:\n{\n  networking.hostName = \"nixos\";\n}\n";
+        assert_eq!(strip_hardware_import(generated), generated);
     }
 
     /// Answers `true` for the named features, `false` for everything else,

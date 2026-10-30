@@ -74,9 +74,18 @@ the git tree, so an untracked hardware file silently falls back to
 
 `nixos/hosts/<name>.nix` has no such fallback -- it must exist before
 `nixosConfigurations.<name>` evaluates at all. `dlsys init` seeds it
-automatically on a NixOS machine with just `networking.hostName` and
-`system.stateVersion` (scraped from `/etc/nixos/configuration.nix`); grow it
-by hand from there, the same way console/dance/suspense did.
+automatically on a NixOS machine by copying `/etc/nixos/configuration.nix`
+verbatim (minus its own `./hardware-configuration.nix` import, which would
+resolve to the wrong path once moved -- the hardware module above already
+covers it). Copied rather than trimmed down to a minimal file: the generated
+config is also where the installer puts facts with no other home at all --
+the user account's groups/shell/password, a non-US keyboard layout -- and a
+minimal version dropped that once and left a real machine's login locked out
+after a reboot. Anywhere the copy duplicates `nixos/common.nix` with an
+identical value, NixOS's module system accepts the duplicate silently; a
+genuine conflict fails the build loudly instead of failing silently at
+runtime. Trim what's redundant by hand once it's committed, the same way
+console/dance/suspense were grown down from something like this.
 
 Put a program in **NixOS** (`nixos/common.nix` or `nixos/hosts/<name>.nix`)
 if any of:
