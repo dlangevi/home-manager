@@ -73,19 +73,18 @@ the git tree, so an untracked hardware file silently falls back to
 `/etc/nixos`.
 
 `nixos/hosts/<name>.nix` has no such fallback -- it must exist before
-`nixosConfigurations.<name>` evaluates at all. `dlsys init` seeds it
-automatically on a NixOS machine by copying `/etc/nixos/configuration.nix`
-verbatim (minus its own `./hardware-configuration.nix` import, which would
-resolve to the wrong path once moved -- the hardware module above already
-covers it). Copied rather than trimmed down to a minimal file: the generated
-config is also where the installer puts facts with no other home at all --
-the user account's groups/shell/password, a non-US keyboard layout -- and a
-minimal version dropped that once and left a real machine's login locked out
-after a reboot. Anywhere the copy duplicates `nixos/common.nix` with an
-identical value, NixOS's module system accepts the duplicate silently; a
-genuine conflict fails the build loudly instead of failing silently at
-runtime. Trim what's redundant by hand once it's committed, the same way
-console/dance/suspense were grown down from something like this.
+`nixosConfigurations.<name>` evaluates at all. `dlsys init` seeds it on a
+NixOS machine by asking for the hostname to use (the installer's own live
+hostname is often a placeholder, so it's never auto-detected for this) and
+writing a file with just that, `system.stateVersion`, and the full `users.*`
+block -- all scraped out of `/etc/nixos/configuration.nix`. The `users.*`
+block specifically is load-bearing: it's where the installer puts the
+account's groups/shell/password with no other home in this repo at all, and
+an earlier version that dropped it left a real machine's login effectively
+locked out after a reboot. Everything else from the generated file (xserver,
+bootloader, locale, etc.) is left out, on the assumption that it either
+duplicates `nixos/common.nix` or is inert boilerplate; grow the file by hand
+from there, the same way console/dance/suspense were.
 
 Put a program in **NixOS** (`nixos/common.nix` or `nixos/hosts/<name>.nix`)
 if any of:

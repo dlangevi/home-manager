@@ -14,6 +14,7 @@ mod switch;
 
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
+use init::Prompt;
 use runner::{RealRunner, Runner};
 use std::path::Path;
 
@@ -186,7 +187,26 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Init => {
-            let host = hostname(&runner, &dir)?;
+            // Asked rather than auto-detected: a fresh install's live
+            // hostname is often whatever the installer defaulted to (e.g.
+            // "nixos"), not the name this machine should actually register
+            // under -- and that name is also what ends up in
+            // networking.hostName (see init::ensure_nixos_host_file), so it
+            // needs to be a deliberate choice, not an accident of install
+            // media. Detected hostname is offered as the default so a
+            // machine that already has the right one doesn't make you
+            // retype it.
+            let detected = hostname(&runner, &dir).ok();
+            let question = match &detected {
+                Some(d) => format!("Hostname for this machine [{d}]:"),
+                None => "Hostname for this machine:".to_string(),
+            };
+            let answer = init::TtyPrompt.ask(&question)?;
+            let host = if answer.trim().is_empty() {
+                detected.ok_or_else(|| anyhow!("no hostname entered, and none could be detected"))?
+            } else {
+                answer.trim().to_string()
+            };
             init::run(&runner, &dir, &host, &init::TtyPrompt)
         }
         Command::Switch {
