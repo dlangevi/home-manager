@@ -39,6 +39,17 @@
     ];
   };
 
+  # So laughtale can hit this box for a logged-in remote session over
+  # Moonlight. Unlike suspense, dance has no NVIDIA/CUDA conflict to work
+  # around, so capSysAdmin stays at its module default (true) -- needed for
+  # the KMS/portal capture backends under Wayland, which is what
+  # autoLogin + plasma6 + sddm.wayland.enable defaults to here.
+  services.sunshine = {
+    enable = true;
+    autoStart = true;
+    openFirewall = true;
+  };
+
   environment.systemPackages = with pkgs; [ unzip ];
 
   # Deliberately disabled. This pulled `github:dlangevi/home-manager` weekly
