@@ -1,10 +1,13 @@
 { dl-herd, plasma-manager, ... }:
 {
+  anki         = [ ./modules/anki.nix ];
   base         = [ ./modules/base.nix ];
+  chat-apps    = [ ./modules/chat-apps.nix ];
   dev          = [ ./modules/dev.nix ];
   herd         = [ dl-herd.homeModules.default ./modules/herd.nix ];
   desktop-apps = [ ./modules/desktop-apps.nix ];
   documents    = [ ./modules/documents.nix ];
+  media-apps   = [ ./modules/media-apps.nix ];
   gaming       = [ ./modules/gaming.nix ];
   media        = [ ./modules/media.nix ];
   mpd-client   = [ ./modules/mpd-client.nix ];
