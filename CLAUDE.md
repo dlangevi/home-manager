@@ -51,6 +51,22 @@ nix run .#home-manager -- switch --impure --flake ".#$(hostname)"  # skip dlsys 
 nix and this checkout, and is also what `rollout` invokes on remote hosts for
 exactly this reason — a remote may not have the current binary yet.
 
+### Cheap check when only `.nix` files changed
+
+`nix build` on a `nixosConfigurations`/`homeConfigurations` target doesn't
+just evaluate — it builds the real closure (units, `/etc` files, and, for
+this repo, compiles `crates/dlsys`/`crates/dldev` from source via
+`buildRustPackage`). A Rust compile error only surfaces there, not at eval.
+
+But if the change touches only `.nix` files (`modules/`, `nixos/`,
+`machines.nix`, `features.nix`, `flake.nix`) and nothing under `crates/`,
+skip the full build and use `nix flake check` instead — it evaluates every
+host/home config purely without compiling or fetching the package closure,
+which is enough to catch the eval-time errors (bad options, type mismatches,
+assertions, bad wiring) a config-only edit could introduce. Reach for the
+full `nix build` only once `crates/` is touched, or before actually
+switching.
+
 ## 1. NixOS vs home-manager
 
 The flake now owns both NixOS and home-manager layers. NixOS modules live
