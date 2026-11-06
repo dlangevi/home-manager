@@ -1,6 +1,7 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 let
   statusConfig = "${config.xdg.configHome}/i3status-rust/config-default.toml";
+  modifier = config.wayland.windowManager.sway.config.modifier;
 in
 {
   # Only sets the modifier key; everything else is sway's own sensible
@@ -17,6 +18,9 @@ in
       # Tagged with --class by the wifi click command below so this rule
       # only catches that one popup, not every wezterm window.
       floating.criteria = [ { app_id = "nmtui"; } ];
+      keybindings = lib.mkOptionDefault {
+        "${modifier}+Shift+s" = "exec spectacle -r";
+      };
     };
     extraConfig = ''
       for_window [app_id="nmtui"] resize set 800 500, move position center, focus
