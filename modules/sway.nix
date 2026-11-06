@@ -43,6 +43,7 @@ in
       # Tagged with --class by the wifi click command below so this rule
       # only catches that one popup, not every wezterm window.
       floating.criteria = [ { app_id = "nmtui"; } ];
+      input."type:keyboard".xkb_options = "ctrl:nocaps";
       keybindings = lib.mkOptionDefault {
         "${modifier}+Shift+s" = "exec ${screenshotRegion}/bin/screenshot-region";
       };
