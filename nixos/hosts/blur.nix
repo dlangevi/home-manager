@@ -20,6 +20,15 @@
     openFirewall = true;
   };
 
+  # Fast and low-overhead over user-friendly: this is the underpowered
+  # laptop, so it gets Sway instead of Plasma -- no compositor eye candy, no
+  # DE daemons idling in the background, keyboard-driven to begin with.
+  # Losing on purpose: an integrated battery/network applet, screen locker,
+  # and notification daemon -- those become separate small pieces (waybar,
+  # mako, swaylock/swayidle) to wire up later, not included yet.
+  programs.sway.enable = true;
+  services.displayManager.defaultSession = "sway";
+
   # Power management: underpowered laptop, tired battery.
   #
   # TLP and power-profiles-daemon both want to own CPU/USB/PCIe power
@@ -39,6 +48,18 @@
   # Periodic trim instead of mount-time `discard` -- continuous discard has
   # its own write-amplification/power cost; weekly batched trim is cheaper.
   services.fstrim.enable = true;
+
+  # This machine has zero swap (nixos/hardware/blur.nix: swapDevices = [ ]),
+  # so a RAM spike has nowhere to go but the OOM killer -- confirmed
+  # 2026-11-05 when a `nix build` run from wezterm got killed outright under
+  # memory pressure. zram gives the kernel compressed in-RAM swap to reclaim
+  # into first: no disk I/O, cheap zstd CPU cost, no SSD wear or battery hit
+  # -- unlike a disk-backed swapfile, which would also work here but isn't
+  # free the way this is.
+  zramSwap = {
+    enable = true;
+    memoryPercent = 50; # ~4G compressed swap on this 7.7G box
+  };
 
   # NOTE: lid-close still only suspends, not suspend-then-hibernate. This
   # machine has no swap (nixos/hardware/blur.nix: swapDevices = [ ]), and

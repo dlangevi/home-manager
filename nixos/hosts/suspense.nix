@@ -301,6 +301,17 @@
   services.displayManager.defaultSession = "plasmax11";
   services.displayManager.sddm.wayland.enable = false;
 
+  # Personal dev machine: user-friendly Plasma day to day, with Sway offered
+  # as a selectable login-screen session for when fast/low-overhead is worth
+  # more than niceness.
+  services.desktopManager.plasma6.enable = true;
+  # Sway is Wayland-only, and this card's proprietary driver (open = false
+  # above) has historically poor wlroots/EGL support -- it may not actually
+  # come up until that's flipped to the open kernel module. Declared now so
+  # the config matches the intended relationship; treat it as unverified
+  # until tried.
+  programs.sway.enable = true;
+
   # udev hidraw rule (dlangevi is in group "console" historically).
   #
   # uhid carries no ACL by default (crw------- root:root), while uinput gets

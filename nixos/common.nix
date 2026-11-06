@@ -49,15 +49,21 @@
     LC_TIME = "en_US.UTF-8";
   };
 
-  # Desktop
+  # Desktop. Which DE/WM a host gets is NOT decided here -- it's a per-host
+  # choice (plasma6, sway, or both) made in nixos/hosts/<name>.nix, since
+  # that's exactly the knob that trades "user-friendly" for "fast and low
+  # overhead". This just provides the login manager and X/input plumbing
+  # every choice rides on.
   services.xserver.enable = true;
-  services.desktopManager.plasma6.enable = true;
   services.xserver.xkb.layout = "us";
   services.xserver.xkb.variant = "";
 
   services.displayManager.sddm.enable = true;
   services.displayManager.sddm.wayland.enable = lib.mkDefault true;
-  services.displayManager.defaultSession = lib.mkDefault "plasma";
+
+  # Needed by sway (and anything else without a DE to supply its own agent);
+  # plasma6 would also pull this in itself, so it's a harmless shared default.
+  security.polkit.enable = true;
 
   # Printing + SSH
   services.printing.enable = true;

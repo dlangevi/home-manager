@@ -11,6 +11,13 @@
     user = "dance";
   };
 
+  # User-friendly desktop -- dance runs the streaming/rhythm-game rig, not a
+  # terminal-first workflow.
+  services.desktopManager.plasma6.enable = true;
+  # autoLogin needs an explicit session to launch; it no longer gets one by
+  # default now that nixos/common.nix doesn't hardcode plasma for every host.
+  services.displayManager.defaultSession = "plasma";
+
   services.udev.extraRules = ''
       SUBSYSTEMS=="hidraw", ACTION=="add", MODE="0660", GROUP="dance"
   '';

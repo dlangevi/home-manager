@@ -23,6 +23,12 @@
     user = "console";
   };
 
+  # User-friendly desktop -- console is used directly, not from a terminal.
+  services.desktopManager.plasma6.enable = true;
+  # autoLogin needs an explicit session to launch; it no longer gets one by
+  # default now that nixos/common.nix doesn't hardcode plasma for every host.
+  services.displayManager.defaultSession = "plasma";
+
   # Remote access.
   services.tailscale = {
     enable = true;
