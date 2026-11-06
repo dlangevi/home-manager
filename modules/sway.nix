@@ -35,6 +35,9 @@ in
     enable = true;
     config = {
       modifier = "Mod1"; # left Alt
+      # Home-manager's sway module defaults terminal to foot; point it at
+      # wezterm instead.
+      terminal = "wezterm";
       bars = [
         {
           statusCommand = "${pkgs.i3status-rust}/bin/i3status-rs ${statusConfig}";
