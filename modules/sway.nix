@@ -66,7 +66,18 @@ in
   # drop-in replacement that also gets us wifi click + volume scroll for free.
   programs.i3status-rust = {
     enable = true;
+    bars.default.icons = "emoji";
     bars.default.blocks = [
+      {
+        block = "battery";
+        # suspense has no battery; blur does. Showing nothing there beats a
+        # permanent "missing" block on the one machine without one. The
+        # emoji icon set already has a charging-plug icon, so $icon alone
+        # tells plugged-in-vs-not; time_remaining counts down to empty on
+        # battery and up to full while charging, same placeholder either way.
+        missing_format = "";
+        format = " $icon$percentage {$time_remaining.dur(hms:true, min_unit:m)|} ";
+      }
       {
         block = "net";
         format = " $icon {$ssid $signal_strength|Wifi down} ";
@@ -77,7 +88,13 @@ in
           }
         ];
       }
-      { block = "sound"; } # scroll adjusts volume, left-click toggles mute
+      {
+        block = "sound";
+        # $icon alone is the condensed speaker glyph; the emoji set swaps it
+        # to a muted speaker on its own once right-click (toggle_mute, the
+        # block's default) mutes -- no separate click wiring needed.
+        format = " $icon {$volume|} ";
+      }
       {
         block = "time";
         interval = 5;
