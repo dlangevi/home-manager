@@ -19,7 +19,7 @@ in
       floating.criteria = [ { app_id = "nmtui"; } ];
     };
     extraConfig = ''
-      for_window [app_id="nmtui"] resize set 800 500, move position center
+      for_window [app_id="nmtui"] resize set 800 500, move position center, focus
     '';
   };
 
