@@ -23,6 +23,7 @@
   snapclient   = [ ./modules/snapclient.nix ];
   soulseek     = [ ./modules/soulseek.nix ];
   streaming    = [ ./modules/streaming.nix ];
+  sway         = [ ./modules/sway.nix ];
   # Only console selects this: it is the launcher for waking the *other*
   # machine, so it is meaningless on suspense, which desktop-apps also covers.
   wake-suspense = [ ./modules/wake-suspense.nix ];
