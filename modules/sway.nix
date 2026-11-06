@@ -41,6 +41,15 @@ in
       bars = [
         {
           statusCommand = "${pkgs.i3status-rust}/bin/i3status-rs ${statusConfig}";
+          # swaybar's tray resolves StatusNotifierItem icons by name through
+          # the XDG icon themes on XDG_DATA_DIRS, and with no theme named it
+          # searches only hicolor -- which carries none of those names. fcitx5
+          # asks for "input-keyboard-symbolic", the lookup failed, and swaybar
+          # drew its red frowning-face placeholder instead. Adwaita has that
+          # name and the rest of the freedesktop set.
+          extraConfig = ''
+            tray icon_theme Adwaita
+          '';
         }
       ];
       # Tagged with --class by the wifi click command below so this rule
@@ -60,6 +69,10 @@ in
       bindsym ${modifier}+p exec ${pkgs.dmenu}/bin/dmenu_path | ${pkgs.dmenu}/bin/dmenu | ${pkgs.findutils}/bin/xargs swaymsg exec --
     '';
   };
+
+  # Named by the bar's `tray icon_theme` above; without it on the profile
+  # there are no icons for the tray to find.
+  home.packages = [ pkgs.adwaita-icon-theme ];
 
   # Sway sets no cursor theme of its own, so the pointer falls back to the
   # stock X11 cross -- Breeze is what Plasma was drawing here before. One

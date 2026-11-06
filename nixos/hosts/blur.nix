@@ -27,6 +27,11 @@
   # and notification daemon -- those become separate small pieces (waybar,
   # mako, swaylock/swayidle) to wire up later, not included yet.
   programs.sway.enable = true;
+  # swaybar decodes tray icons through gdk-pixbuf, which only handles SVG when
+  # librsvg's loader is on GDK_PIXBUF_MODULE_FILE. Modern icon themes ship
+  # SVG only, so without this every tray item renders as swaybar's red
+  # frowning-face placeholder. The gtk wrapper is what sets that variable.
+  programs.sway.wrapperFeatures.gtk = true;
   services.displayManager.defaultSession = "sway";
 
   # Power management: underpowered laptop, tired battery.

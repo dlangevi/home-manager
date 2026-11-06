@@ -311,6 +311,9 @@
   # the config matches the intended relationship; treat it as unverified
   # until tried.
   programs.sway.enable = true;
+  # See blur.nix: without the gtk wrapper, swaybar can't decode SVG tray
+  # icons and draws a red frowning-face placeholder instead.
+  programs.sway.wrapperFeatures.gtk = true;
 
   # udev hidraw rule (dlangevi is in group "console" historically).
   #
