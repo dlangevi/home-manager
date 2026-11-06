@@ -2,6 +2,23 @@
 let
   statusConfig = "${config.xdg.configHome}/i3status-rust/config-default.toml";
   modifier = config.wayland.windowManager.sway.config.modifier;
+
+  # spectacle needs KWin's screenshot DBus interface, which isn't there under
+  # sway. grim+slurp talk to sway directly over wlr-screencopy -- no portal,
+  # no compositor-specific backend required.
+  screenshotRegion = pkgs.writeShellApplication {
+    name = "screenshot-region";
+    runtimeInputs = with pkgs; [ grim slurp wl-clipboard ];
+    text = ''
+      dir="$HOME/Pictures/Screenshots"
+      mkdir -p "$dir"
+      file="$dir/$(date +%Y-%m-%d_%H-%M-%S).png"
+      geometry=$(slurp) || exit 1
+      grim -g "$geometry" "$file"
+      wl-copy < "$file"
+      echo "$file"
+    '';
+  };
 in
 {
   # Only sets the modifier key; everything else is sway's own sensible
@@ -19,7 +36,7 @@ in
       # only catches that one popup, not every wezterm window.
       floating.criteria = [ { app_id = "nmtui"; } ];
       keybindings = lib.mkOptionDefault {
-        "${modifier}+Shift+s" = "exec spectacle -r";
+        "${modifier}+Shift+s" = "exec ${screenshotRegion}/bin/screenshot-region";
       };
     };
     extraConfig = ''
