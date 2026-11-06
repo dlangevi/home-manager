@@ -61,6 +61,20 @@ in
     '';
   };
 
+  # Sway sets no cursor theme of its own, so the pointer falls back to the
+  # stock X11 cross -- Breeze is what Plasma was drawing here before. One
+  # declaration covers both consumers: the sway seat, and Xwayland via
+  # Xresources. GTK/Qt apps follow XCURSOR_THEME, which this sets too --
+  # deliberately *not* home-manager's gtk module, which would take ownership
+  # of gtk-3.0/settings.ini away from Plasma on suspense.
+  home.pointerCursor = {
+    package = pkgs.kdePackages.breeze;
+    name = "breeze_cursors";
+    size = 24;
+    sway.enable = true;
+    x11.enable = true;
+  };
+
   # Plain i3status can't react to clicks/scrolls -- i3status-rust speaks the
   # same i3bar click-event protocol swaybar already understands, so it's a
   # drop-in replacement that also gets us wifi click + volume scroll for free.
