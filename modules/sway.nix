@@ -76,7 +76,15 @@ in
         # tells plugged-in-vs-not; time_remaining counts down to empty on
         # battery and up to full while charging, same placeholder either way.
         missing_format = "";
+        # full_format/not_charging_format/empty_format each default to a
+        # bare " $icon " independently of `format` -- the block force-sets
+        # status to Full above full_threshold (95%) regardless of plug
+        # state, so at a high charge the icon-only default was winning and
+        # swallowing percentage/time even right after unplugging at ~98%.
         format = " $icon$percentage {$time_remaining.dur(hms:true, min_unit:m)|} ";
+        full_format = " $icon$percentage ";
+        not_charging_format = " $icon$percentage ";
+        empty_format = " $icon$percentage ";
       }
       {
         block = "net";
