@@ -70,7 +70,7 @@ in
   home.pointerCursor = {
     package = pkgs.kdePackages.breeze;
     name = "breeze_cursors";
-    size = 20;
+    size = 24;
     sway.enable = true;
     x11.enable = true;
   };
