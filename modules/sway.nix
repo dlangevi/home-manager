@@ -14,7 +14,13 @@ in
           statusCommand = "${pkgs.i3status-rust}/bin/i3status-rs ${statusConfig}";
         }
       ];
+      # Tagged with --class by the wifi click command below so this rule
+      # only catches that one popup, not every wezterm window.
+      floating.criteria = [ { app_id = "nmtui"; } ];
     };
+    extraConfig = ''
+      for_window [app_id="nmtui"] resize set 800 500, move position center
+    '';
   };
 
   # Plain i3status can't react to clicks/scrolls -- i3status-rust speaks the
@@ -29,7 +35,7 @@ in
         click = [
           {
             button = "left";
-            cmd = "wezterm start -- nmtui";
+            cmd = "wezterm start --class nmtui -- nmtui";
           }
         ];
       }
