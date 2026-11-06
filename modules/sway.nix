@@ -15,7 +15,7 @@ let
       file="$dir/$(date +%Y-%m-%d_%H-%M-%S).png"
       geometry=$(slurp) || exit 1
       grim -g "$geometry" "$file"
-      wl-copy < "$file"
+      wl-copy --type image/png < "$file"
       echo "$file"
     '';
   };
