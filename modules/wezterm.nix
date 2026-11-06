@@ -60,6 +60,20 @@ in
       -- that does not go through that code path at all.
       config.front_end = 'WebGpu'
 
+      -- Workaround for an unfixed upstream Wayland bug
+      -- (github.com/wezterm/wezterm/issues/6463): on sway/wlroots, the
+      -- window draws at this default 80x24 size and stays there until
+      -- something else (mouse motion) forces a recalculation, because
+      -- scaling_changed's close_enough() check mistakes sway's initial
+      -- tiled-size configure event for a trivial DPI change and skips
+      -- applying it. A for_window floating-toggle sway rule does NOT work
+      -- around it -- that runs before the first paint, with no intervening
+      -- frame for wezterm to notice. Starting far wider than any real tile
+      -- makes the actual resize delta too large for close_enough() to
+      -- swallow, so the correct size gets applied immediately instead.
+      config.initial_cols = 240
+      config.initial_rows = 60
+
       -- Passthrough profile. Everything below that mirrors tmux -- the C-a
       -- prefix and its whole table, the bare C-arrow and C-hjkl bindings --
       -- exists because wezterm is the outer multiplexer on this machine. Point

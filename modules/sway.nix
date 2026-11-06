@@ -55,14 +55,9 @@ in
     extraConfig = ''
       for_window [app_id="nmtui"] resize set 800 500, move position center, focus
 
-      # Upstream wezterm bug (github.com/wezterm/wezterm/issues/6463): its
-      # Wayland scaling_changed handler mistakes sway's initial tiled-size
-      # configure event for a trivial DPI change and skips applying it, so
-      # the window draws at wezterm's floating default size until something
-      # else forces a recalculation -- moving the mouse over it is the
-      # symptom users hit. Toggling floating on then off immediately on map
-      # does the same forced recalculation without needing that mouse move.
-      for_window [app_id="org.wezfurlong.wezterm"] floating enable, floating disable
+      # Launcher moved off Mod1+d -- see modules/sway.nix keybindings.
+      unbindsym ${modifier}+d
+      bindsym ${modifier}+p exec ${pkgs.dmenu}/bin/dmenu_path | ${pkgs.dmenu}/bin/dmenu | ${pkgs.findutils}/bin/xargs swaymsg exec --
     '';
   };
 
