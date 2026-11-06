@@ -1,4 +1,7 @@
-{ ... }:
+{ config, pkgs, ... }:
+let
+  statusConfig = "${config.xdg.configHome}/i3status-rust/config-default.toml";
+in
 {
   # Only sets the modifier key; everything else is sway's own sensible
   # default keybinding set (home-manager fills it in around this).
@@ -6,40 +9,36 @@
     enable = true;
     config = {
       modifier = "Mod1"; # left Alt
+      bars = [
+        {
+          statusCommand = "${pkgs.i3status-rust}/bin/i3status-rs ${statusConfig}";
+        }
+      ];
     };
   };
 
-  # Default swaybar runs i3status; enableDefault pulls in disk/cpu/memory
-  # we don't want on a status bar this small. Keep just wifi, volume, clock.
-  programs.i3status = {
+  # Plain i3status can't react to clicks/scrolls -- i3status-rust speaks the
+  # same i3bar click-event protocol swaybar already understands, so it's a
+  # drop-in replacement that also gets us wifi click + volume scroll for free.
+  programs.i3status-rust = {
     enable = true;
-    enableDefault = false;
-    general = {
-      colors = true;
-      interval = 5;
-    };
-    modules = {
-      "wireless _first_" = {
-        position = 1;
-        settings = {
-          format_up = "W: (%quality at %essid) %ip";
-          format_down = "W: down";
-        };
-      };
-      "volume master" = {
-        position = 2;
-        settings = {
-          format = "♪ %volume";
-          format_muted = "♪ muted";
-          device = "pulse:0";
-        };
-      };
-      "tztime local" = {
-        position = 3;
-        settings = {
-          format = "%Y-%m-%d %H:%M:%S";
-        };
-      };
-    };
+    bars.default.blocks = [
+      {
+        block = "net";
+        format = " $icon {$ssid $signal_strength|Wifi down} ";
+        click = [
+          {
+            button = "left";
+            cmd = "wezterm start -- nmtui";
+          }
+        ];
+      }
+      { block = "sound"; } # scroll adjusts volume, left-click toggles mute
+      {
+        block = "time";
+        interval = 5;
+        format = " $timestamp.datetime(f:'%Y-%m-%d %H:%M:%S') ";
+      }
+    ];
   };
 }
