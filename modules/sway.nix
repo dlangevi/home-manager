@@ -8,7 +8,7 @@ let
   # no compositor-specific backend required.
   screenshotRegion = pkgs.writeShellApplication {
     name = "screenshot-region";
-    runtimeInputs = with pkgs; [ grim slurp wl-clipboard ];
+    runtimeInputs = with pkgs; [ grim slurp wl-clipboard xclip ];
     text = ''
       dir="$HOME/Pictures/Screenshots"
       mkdir -p "$dir"
@@ -16,6 +16,14 @@ let
       geometry=$(slurp) || exit 1
       grim -g "$geometry" "$file"
       wl-copy --type image/png < "$file"
+      # Xwayland runs alongside sway's native clipboard here (DISPLAY is
+      # set), and whatever reads the paste may ask the X11 CLIPBOARD
+      # selection instead of the Wayland one -- fill both so it's found
+      # either way.
+      if [ -n "''${DISPLAY:-}" ]; then
+        xclip -selection clipboard -t image/png -i "$file" &
+        disown
+      fi
       echo "$file"
     '';
   };
