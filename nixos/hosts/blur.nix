@@ -66,30 +66,35 @@
     memoryPercent = 50; # ~4G compressed swap on this 7.7G box
   };
 
-  # Hibernate on lid close. Three things have to agree:
+  # Hibernate on lid close, resolved entirely by systemd rather than by
+  # kernel parameters.
   #
-  #   1. a disk-backed swapfile at least as large as RAM -- zram cannot hold
-  #      a hibernation image, it lives in the RAM being saved,
-  #   2. boot.resumeDevice -- the filesystem holding that file, and
-  #   3. resume_offset -- the swapfile's first physical block within that
-  #      filesystem, because the kernel reads the image before any
-  #      filesystem driver is up and so cannot resolve a path.
+  # The kernel reads the hibernation image before any filesystem is mounted
+  # -- it has to, since mounting would replay the journal over state the
+  # image is about to restore -- so it cannot resolve the path "/swapfile".
+  # It needs raw coordinates: a block device plus the file's first physical
+  # block. The classic fix hardcodes both as `boot.resumeDevice` plus a
+  # `resume_offset=` kernel param, but the offset is wherever ext4 happened
+  # to allocate the file, so recreating the swapfile (notably: changing the
+  # size below, which makes NixOS rebuild it) silently desyncs it and resume
+  # degrades to a cold boot with no error -- a wrong offset and no image at
+  # all are indistinguishable from one page of non-matching bytes.
   #
-  # The offset is a property of where ext4 happened to allocate the file, so
-  # it is only knowable after the file exists -- hence it is hardcoded here
-  # rather than computed. If the swapfile is ever recreated (resized,
-  # deleted, restored) the offset changes and resume silently falls back to
-  # a cold boot. Re-read it with:
+  # systemd >= 255 avoids the hardcoding: `systemctl hibernate` FIEMAPs the
+  # live file and records device + offset in the EFI variable
+  # HibernateLocation, and systemd-hibernate-resume-generator in the initrd
+  # reads it back on the next boot, then clears it. The offset is therefore
+  # recomputed from the real file every hibernate and cannot go stale.
+  # Requires a systemd stage 1 (the default here) and writable efivars; the
+  # generator and systemd-hibernate-resume.service are in the initrd
+  # unconditionally, independent of boot.resumeDevice.
   #
-  #   sudo filefrag -v /swapfile | awk '$1 == "0:" { print $4 }'
-  #
-  # and update resume_offset below.
+  # Nothing is pinned here on purpose -- `boot.resumeDevice` would only
+  # re-add the brittle half.
   swapDevices = [{
     device = "/swapfile";
     size = 8 * 1024; # MiB -- covers 7.7G of RAM with headroom
   }];
-  boot.resumeDevice = "/dev/disk/by-uuid/ab7a651e-44fc-45fa-b188-24ab6df00f6e";
-  boot.kernelParams = [ "resume_offset=5363712" ];
 
   # Plain hibernate rather than suspend-then-hibernate: with a battery this
   # tired the point is to not drain at all while the lid is shut, and S3 on
