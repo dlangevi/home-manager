@@ -66,10 +66,34 @@
     memoryPercent = 50; # ~4G compressed swap on this 7.7G box
   };
 
-  # NOTE: lid-close still only suspends, not suspend-then-hibernate. This
-  # machine has no swap (nixos/hardware/blur.nix: swapDevices = [ ]), and
-  # hibernate needs a swapfile plus a resume_offset that can only be
-  # computed after that file exists on disk -- a two-step, host-specific
-  # setup rather than a pure Nix change. Worth doing as a deliberate
-  # follow-up if plain suspend doesn't hold battery well enough overnight.
+  # Hibernate on lid close. Three things have to agree:
+  #
+  #   1. a disk-backed swapfile at least as large as RAM -- zram cannot hold
+  #      a hibernation image, it lives in the RAM being saved,
+  #   2. boot.resumeDevice -- the filesystem holding that file, and
+  #   3. resume_offset -- the swapfile's first physical block within that
+  #      filesystem, because the kernel reads the image before any
+  #      filesystem driver is up and so cannot resolve a path.
+  #
+  # The offset is a property of where ext4 happened to allocate the file, so
+  # it is only knowable after the file exists -- hence it is hardcoded here
+  # rather than computed. If the swapfile is ever recreated (resized,
+  # deleted, restored) the offset changes and resume silently falls back to
+  # a cold boot. Re-read it with:
+  #
+  #   sudo filefrag -v /swapfile | awk '$1 == "0:" { print $4 }'
+  #
+  # and update resume_offset below.
+  swapDevices = [{
+    device = "/swapfile";
+    size = 8 * 1024; # MiB -- covers 7.7G of RAM with headroom
+  }];
+  boot.resumeDevice = "/dev/disk/by-uuid/ab7a651e-44fc-45fa-b188-24ab6df00f6e";
+  boot.kernelParams = [ "resume_offset=5363712" ];
+
+  # Plain hibernate rather than suspend-then-hibernate: with a battery this
+  # tired the point is to not drain at all while the lid is shut, and S3 on
+  # this box still costs a few percent an hour. Switch to
+  # "suspend-then-hibernate" if waking from a short close is too slow.
+  services.logind.lidSwitch = "hibernate";
 }
