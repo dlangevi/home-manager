@@ -52,9 +52,9 @@ in
           '';
         }
       ];
-      # Tagged with --class by the wifi click command below so this rule
-      # only catches that one popup, not every wezterm window.
-      floating.criteria = [ { app_id = "nmtui"; } ];
+      # Tagged with --class by the bar click commands below so these rules
+      # only catch those popups, not every wezterm window.
+      floating.criteria = [ { app_id = "nmtui"; } { app_id = "bluetuith"; } ];
       window.titlebar = false;
       input."type:keyboard".xkb_options = "ctrl:nocaps";
       keybindings = lib.mkOptionDefault {
@@ -63,6 +63,9 @@ in
     };
     extraConfig = ''
       for_window [app_id="nmtui"] resize set 800 500, move position center, focus
+      # bluetuith lists adapters, devices and per-device profiles side by
+      # side, so it needs more room than nmtui.
+      for_window [app_id="bluetuith"] resize set 900 600, move position center, focus
 
       # Launcher moved off Mod1+d -- see modules/sway.nix keybindings.
       unbindsym ${modifier}+d
@@ -72,7 +75,14 @@ in
 
   # Named by the bar's `tray icon_theme` above; without it on the profile
   # there are no icons for the tray to find.
-  home.packages = [ pkgs.adwaita-icon-theme ];
+  home.packages = [
+    pkgs.adwaita-icon-theme
+    # Pairing/unpairing surface for the bluetooth block below. A TUI rather
+    # than blueman: keyboard-only like the rest of this setup, and a small
+    # Go binary instead of blueman's GTK + Python tree on a laptop this
+    # underpowered.
+    pkgs.bluetuith
+  ];
 
   # Sway sets no cursor theme of its own, so the pointer falls back to the
   # stock X11 cross -- Breeze is what Plasma was drawing here before. One
@@ -120,6 +130,28 @@ in
           {
             button = "left";
             cmd = "wezterm start --class nmtui -- nmtui";
+          }
+        ];
+      }
+      {
+        block = "bluetooth";
+        # This block monitors one device by MAC -- it is not an adapter
+        # on/off indicator, there isn't one. These are the headphones;
+        # bluez reports their battery over D-Bus without its experimental
+        # flag, so $percentage populates. Right-click (the block's own
+        # default action) connects/disconnects; left-click opens bluetuith
+        # to pair anything else.
+        mac = "AC:BF:71:CA:44:D0";
+        # Empty when disconnected, so the block costs no bar space while
+        # the headphones are off -- and stays invisible on suspense, which
+        # also gets this feature but will never see this MAC. Same trick
+        # the battery block above uses with missing_format.
+        disconnected_format = "";
+        format = " $icon $name{ $percentage|} ";
+        click = [
+          {
+            button = "left";
+            cmd = "wezterm start --class bluetuith -- bluetuith";
           }
         ];
       }
