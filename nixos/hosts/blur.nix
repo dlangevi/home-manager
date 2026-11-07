@@ -91,6 +91,15 @@
   #
   # Nothing is pinned here on purpose -- `boot.resumeDevice` would only
   # re-add the brittle half.
+  #
+  # Verified 2026-11-07 on this host, not assumed: with /proc/cmdline
+  # carrying neither resume= nor resume_offset=, `systemctl hibernate`
+  # powered off and resumed into the live session -- 46s of wall clock
+  # across a ~3s monotonic gap, which only a real power-off produces, and
+  # the journal shows efivarfs dropping HibernateLocation on wake. Note
+  # systemd-hibernate-resume.service logs nothing in the resumed journal:
+  # it runs in the resume kernel's initrd, which is discarded when it jumps
+  # into the restored image. Absence there is not evidence of failure.
   swapDevices = [{
     device = "/swapfile";
     size = 8 * 1024; # MiB -- covers 7.7G of RAM with headroom
