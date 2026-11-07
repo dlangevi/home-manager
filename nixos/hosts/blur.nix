@@ -100,6 +100,10 @@
   # systemd-hibernate-resume.service logs nothing in the resumed journal:
   # it runs in the resume kernel's initrd, which is discarded when it jumps
   # into the restored image. Absence there is not evidence of failure.
+  #
+  # The lid-close path itself (not just `systemctl hibernate`) confirmed in
+  # flight the same day: shut, carried, reopened with no measurable battery
+  # loss -- which was the whole point over S3.
   swapDevices = [{
     device = "/swapfile";
     size = 8 * 1024; # MiB -- covers 7.7G of RAM with headroom
