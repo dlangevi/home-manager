@@ -59,6 +59,27 @@ in
       input."type:keyboard".xkb_options = "ctrl:nocaps";
       keybindings = lib.mkOptionDefault {
         "${modifier}+Shift+s" = "exec ${screenshotRegion}/bin/screenshot-region";
+
+        # The Fn row emits these XF86 symbols but nothing bound them --
+        # neither this config nor home-manager's sway defaults ship media
+        # keybindings, so the whole row was dead.
+        #
+        # No OSD daemon here (no mako yet), but the bar is the feedback:
+        # the sound and backlight blocks both update live, so a keypress
+        # is visible there.
+        "XF86AudioRaiseVolume" =
+          "exec ${pkgs.wireplumber}/bin/wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+";
+        "XF86AudioLowerVolume" =
+          "exec ${pkgs.wireplumber}/bin/wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-";
+        # -l 1.0 on the raise only: it caps at 100% so the key cannot
+        # push PipeWire into software gain above unity and clip.
+        "XF86AudioMute" =
+          "exec ${pkgs.wireplumber}/bin/wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
+        "XF86AudioMicMute" =
+          "exec ${pkgs.wireplumber}/bin/wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle";
+
+        "XF86MonBrightnessUp" = "exec ${pkgs.brightnessctl}/bin/brightnessctl set 5%+";
+        "XF86MonBrightnessDown" = "exec ${pkgs.brightnessctl}/bin/brightnessctl set 5%-";
       };
     };
     extraConfig = ''
@@ -142,11 +163,17 @@ in
         # default action) connects/disconnects; left-click opens bluetuith
         # to pair anything else.
         mac = "AC:BF:71:CA:44:D0";
-        # Empty when disconnected, so the block costs no bar space while
-        # the headphones are off -- and stays invisible on suspense, which
-        # also gets this feature but will never see this MAC. Same trick
-        # the battery block above uses with missing_format.
-        disconnected_format = "";
+        # Visible but minimal when disconnected -- just the icon, which is
+        # what you right-click to connect. An empty string here hid the
+        # block entirely and left no way to initiate a connection, which
+        # was the whole point of having it.
+        #
+        # $available is a flag the block only sets when bluez knows the
+        # device at all. Gating on it means a disconnected-but-paired
+        # headset still shows its icon here, while a machine that has
+        # never seen this MAC (suspense, which also gets this feature)
+        # renders nothing.
+        disconnected_format = "{ $available$icon |}";
         format = " $icon $name{ $percentage|} ";
         click = [
           {
@@ -154,6 +181,25 @@ in
             cmd = "wezterm start --class bluetuith -- bluetuith";
           }
         ];
+      }
+      {
+        block = "backlight";
+        # Scroll to dim/brighten, exactly like the sound block below --
+        # the block talks to systemd-logind over D-Bus to set brightness,
+        # so this needs no udev rule or setuid helper.
+        #
+        # No `device` set on purpose: it then picks up whatever is in
+        # /sys/class/backlight, which is intel_backlight here and would be
+        # the amdgpu equivalent elsewhere. missing_format hides it on a
+        # desktop with no panel to dim.
+        missing_format = "";
+        format = " $icon $brightness ";
+        # intel_backlight exposes 7500 raw steps, and perceived lightness
+        # tracks roughly the cube root of luminance -- scrolling linearly
+        # through raw values wastes most of the travel at the bright end
+        # where nothing looks different. The docs suggest 2.4-3.0 for
+        # devices like this.
+        root_scaling = 2.4;
       }
       {
         block = "sound";

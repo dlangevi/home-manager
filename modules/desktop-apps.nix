@@ -44,8 +44,33 @@ in
     kdePackages.spectacle
     kdePackages.kdeconnect-kde
     kdePackages.filelight
-    floorp-bin
   ];
+
+  # floorp-bin now comes from the home-manager module rather than
+  # home.packages, because that is what wraps the binary with an enterprise
+  # policies.json. Only `policies` is set -- no `profiles`, so nothing here
+  # writes profiles.ini or touches the existing profile; the managed-storage
+  # files above keep configuring uBO exactly as before.
+  #
+  # force_installed installs both add-ons on first launch of any profile and
+  # stops them being removed from about:addons. The xpi is fetched from AMO by
+  # the browser at runtime (so it self-updates and is not pinned by this
+  # flake); pinning instead would mean adding the rycee firefox-addons NUR as
+  # an input and a lock bump per extension update.
+  programs.floorp = {
+    enable = true;
+    policies.ExtensionSettings = {
+      "uBlock0@raymondhill.net" = {
+        install_url = "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi";
+        installation_mode = "force_installed";
+        private_browsing = true;
+      };
+      "{d7742d87-e61d-4b78-b8a1-b469842139fa}" = {
+        install_url = "https://addons.mozilla.org/firefox/downloads/latest/vimium-ff/latest.xpi";
+        installation_mode = "force_installed";
+      };
+    };
+  };
 
   # Nothing in the session declares a default browser, so the handler for
   # http/https was resolved from whichever mimeinfo.cache the asking process
