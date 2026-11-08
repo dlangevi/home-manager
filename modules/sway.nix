@@ -200,6 +200,12 @@ in
         # where nothing looks different. The docs suggest 2.4-3.0 for
         # devices like this.
         root_scaling = 2.4;
+        # The emoji icon set lists backlight as 🌕🌔🌓🌒🌑 -- brightest
+        # glyph first -- so the default mapping puts a full moon at
+        # minimum brightness and a new moon at maximum. Inverting makes
+        # the moon wax as the screen gets brighter, which is the only
+        # reading anyone expects.
+        invert_icons = true;
       }
       {
         block = "sound";
