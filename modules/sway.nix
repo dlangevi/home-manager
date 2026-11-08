@@ -3,6 +3,26 @@ let
   statusConfig = "${config.xdg.configHome}/i3status-rust/config-default.toml";
   modifier = config.wayland.windowManager.sway.config.modifier;
 
+  # A TUI popup in its own wezterm window, sized in cells.
+  #
+  # modules/wezterm.nix sets initial_cols/initial_rows to 240x60 to dodge a
+  # wlroots resize bug, which is deliberately far wider than any real tile.
+  # Letting a popup inherit that and then correcting it with a sway
+  # `resize set` is what broke these: measured, the child saw 240x60 for
+  # about a second before SIGWINCH dropped it to 105x31, so the TUI laid
+  # itself out for a window more than twice its final width. nmtui in
+  # particular never recovers.
+  #
+  # Overriding per-window means the size is right in the first frame and no
+  # resize happens at all -- sway honours a floating window's requested
+  # size, so there is no configure event to race with. Cells, not pixels:
+  # it is the unit the TUI reasons in, and it does not silently change
+  # meaning when the font size does.
+  weztermPopup =
+    { class, cols, rows, cmd }:
+    "wezterm --config initial_cols=${toString cols} --config initial_rows=${toString rows}"
+    + " start --class ${class} -- ${cmd}";
+
   # spectacle needs KWin's screenshot DBus interface, which isn't there under
   # sway. grim+slurp talk to sway directly over wlr-screencopy -- no portal,
   # no compositor-specific backend required.
@@ -83,10 +103,8 @@ in
       };
     };
     extraConfig = ''
-      for_window [app_id="nmtui"] resize set 800 500, move position center, focus
-      # bluetuith lists adapters, devices and per-device profiles side by
-      # side, so it needs more room than nmtui.
-      for_window [app_id="bluetuith"] resize set 900 600, move position center, focus
+      for_window [app_id="nmtui"] move position center, focus
+      for_window [app_id="bluetuith"] move position center, focus
 
       # Launcher moved off Mod1+d -- see modules/sway.nix keybindings.
       unbindsym ${modifier}+d
@@ -150,7 +168,12 @@ in
         click = [
           {
             button = "left";
-            cmd = "wezterm start --class nmtui -- nmtui";
+            cmd = weztermPopup {
+              class = "nmtui";
+              cols = 100;
+              rows = 30;
+              cmd = "nmtui";
+            };
           }
         ];
       }
@@ -178,7 +201,14 @@ in
         click = [
           {
             button = "left";
-            cmd = "wezterm start --class bluetuith -- bluetuith";
+            # Wider than nmtui: bluetuith puts adapters, devices and
+            # per-device profiles side by side.
+            cmd = weztermPopup {
+              class = "bluetuith";
+              cols = 120;
+              rows = 36;
+              cmd = "bluetuith";
+            };
           }
         ];
       }
