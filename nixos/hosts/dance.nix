@@ -29,6 +29,13 @@
       # ../modules/dance-storage.nix). Only the public half lives here --
       # the private key is root's on suspense.
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOnaEZ5iCiungP/aPu0OkEAc5PMRkEvAaGRXGxgKHiuT root@suspense"
+      # console@dance-admin, a dedicated unrestricted key for console. The
+      # console@frameart key above (frameart-host.nix) stays rrsync-only
+      # for the image sync; this one is a separate keypair so console can
+      # get a real shell (dlsys rollout, ad-hoc admin) without loosening
+      # that restriction. Only the public half lives here -- the private
+      # key is console's, at ~/.ssh/id_ed25519_dance-admin.
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOW8W08WgSljSKmZKJjkDd8HGQ9a2K+hMjrfr3BCYmtv console@dance-admin"
     ];
   };
 
