@@ -243,6 +243,20 @@ in
       set -as terminal-features ",xterm*:extkeys"
       bind-key -n C-S-a send-keys C-a
 
+      # C-S-h/j/k/l: always select-pane at this server, the same escape C-S-a
+      # gives the prefix. Plain C-h/j/k/l goes through vim-tmux-navigator,
+      # which forwards the key instead of moving panes whenever the pane's
+      # foreground process matches its pattern (nvim, ssh, mosh-client -- so
+      # also a nested tmux reached over one of those). That is the point most
+      # of the time, but it also means the bare keys cannot get you out of
+      # such a pane. These bypass the navigator entirely -- root table, no
+      # pattern check -- so they always move between this server's panes,
+      # nesting or not.
+      bind-key -n C-S-h select-pane -L
+      bind-key -n C-S-j select-pane -D
+      bind-key -n C-S-k select-pane -U
+      bind-key -n C-S-l select-pane -R
+
       # Global options
       set-option -g focus-events on
       set-window-option -g xterm-keys on

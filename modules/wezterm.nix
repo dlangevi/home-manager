@@ -691,6 +691,19 @@ ${sshHostsLua}      }
         split_nav('resize', 'j'),
         split_nav('resize', 'k'),
         split_nav('resize', 'l'),
+
+        -- C-S-h/j/k/l: always ActivatePaneDirection, bypassing is_vim and
+        -- is_forwarding entirely. split_nav above is right most of the time --
+        -- forward C-hjkl into neovim or a nested tmux/ssh/mosh pane so it can
+        -- use its own splits -- but that also means plain C-hjkl cannot move
+        -- *out* of such a pane. This is that escape, the wezterm half of the
+        -- same trick tmux.nix's C-S-h/j/k/l plays at its layer (and the same
+        -- idea as C-S-a for the prefix): a distinct keycode the inner program
+        -- never binds, so it always reaches this pane selector.
+        { key = 'h', mods = 'CTRL|SHIFT', action = wezterm.action.ActivatePaneDirection 'Left' },
+        { key = 'j', mods = 'CTRL|SHIFT', action = wezterm.action.ActivatePaneDirection 'Down' },
+        { key = 'k', mods = 'CTRL|SHIFT', action = wezterm.action.ActivatePaneDirection 'Up' },
+        { key = 'l', mods = 'CTRL|SHIFT', action = wezterm.action.ActivatePaneDirection 'Right' },
       }
 
       -- One-for-one with tmux's prefix table, so the same keys mean the same
