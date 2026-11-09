@@ -17,17 +17,20 @@ NARRATION_PROMPT = (
     "label) to yourself, then use the WebSearch tool to try to verify the "
     "artwork's title, painter, and year from those details -- a guess from "
     "visual memory alone is often wrong, so confirm it against search "
-    "results before committing to an attribution. Respond with ONLY a JSON "
-    "object (no markdown fences, no commentary) with exactly these keys: "
-    "\"title\" (the painting's title, or \"Untitled\" if unknown), "
-    "\"artist\" (the painter's name, or \"Unknown\" if you cannot tell), "
-    "\"year\" (a year or short date range as a string, or \"Unknown\"), "
-    "\"text\" (a warm, spoken-style script of about 100-150 words: a "
-    "little context about the piece, then a brief history of the painter "
-    "-- plain prose only, nothing but the words to be read aloud; if you "
-    "cannot verify the piece confidently even after searching, say so "
-    "plainly in this field and describe what you see instead of guessing a "
-    "false attribution)."
+    "results before committing to an attribution.\n\n"
+    "Your final reply must be ONLY a single JSON object: no commentary "
+    "before or after it, no markdown fences, nothing but the object "
+    "itself. It must have exactly these keys:\n"
+    "\"title\": the painting's title, or \"Untitled\" if unknown.\n"
+    "\"artist\": the painter's name, or \"Unknown\" if you cannot tell.\n"
+    "\"year\": a year or short date range as a string, or \"Unknown\".\n"
+    "\"text\": REQUIRED, must never be left blank. A warm, spoken-style "
+    "script of about 100-150 words: a little context about the piece, "
+    "then a brief history of the painter. Plain prose only, nothing but "
+    "the words to be read aloud. If you could not verify the piece "
+    "confidently even after searching, say so plainly in this field and "
+    "describe what you see instead of guessing a false attribution -- "
+    "the field is still required either way."
 )
 
 app = FastAPI()
@@ -62,18 +65,21 @@ def generate_narration(image_path: Path) -> dict:
         capture_output=True, text=True, timeout=180, check=True,
     )
     raw = result.stdout.strip()
-    # Claude sometimes wraps JSON in a markdown fence despite the prompt.
-    if raw.startswith("```"):
-        raw = raw.strip("`")
-        if raw.lower().startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-    data = json.loads(raw)
+    # Despite the prompt, Claude sometimes adds a sentence of commentary
+    # before or after the object, or wraps it in a markdown fence. Pulling
+    # out the outermost {...} handles all of those at once.
+    start, end = raw.find("{"), raw.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise RuntimeError(f"no JSON object in output: {raw[:200]!r}")
+    data = json.loads(raw[start:end + 1])
+    text = str(data.get("text") or "").strip()
+    if not text:
+        raise RuntimeError("narration text field was empty")
     return {
         "title": str(data.get("title") or "Untitled"),
         "artist": str(data.get("artist") or "Unknown"),
         "year": str(data.get("year") or "Unknown"),
-        "text": str(data.get("text") or "").strip(),
+        "text": text,
     }
 
 
