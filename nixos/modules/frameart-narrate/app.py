@@ -1,5 +1,7 @@
+import json
 import os
 import subprocess
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -9,21 +11,36 @@ IMAGES_DIR = Path(os.environ["FRAMEART_IMAGES_DIR"])
 CACHE_DIR = IMAGES_DIR / "narration"
 VOICE_MODEL = os.environ["PIPER_VOICE_MODEL"]
 
-BLURB_PROMPT = (
-    "Look at the painting image at {path}. Identify the artwork and its "
-    "painter if you can tell from the image itself. Write a warm, "
-    "spoken-style script of about 100-150 words: a little context about "
-    "the piece, then a brief history of the painter. Plain prose only, no "
-    "markdown, no headings, no quotation marks -- nothing but the words to "
-    "be read aloud. If you cannot identify it confidently, say so plainly "
-    "and describe what you see instead of guessing a false attribution."
+NARRATION_PROMPT = (
+    "Look at the painting image at {path}. Identify the artwork, its "
+    "painter, and the year it was made, if you can tell from the image "
+    "itself. Respond with ONLY a JSON object (no markdown fences, no "
+    "commentary) with exactly these keys: "
+    "\"title\" (the painting's title, or \"Untitled\" if unknown), "
+    "\"artist\" (the painter's name, or \"Unknown\" if you cannot tell), "
+    "\"year\" (a year or short date range as a string, or \"Unknown\"), "
+    "\"text\" (a warm, spoken-style script of about 100-150 words: a "
+    "little context about the piece, then a brief history of the painter "
+    "-- plain prose only, nothing but the words to be read aloud; if you "
+    "cannot identify the piece confidently, say so plainly in this field "
+    "and describe what you see instead of guessing a false attribution)."
 )
 
 app = FastAPI()
 
+# Filenames currently being synthesized in a background thread, so a second
+# /narrate call for the same picture while audio is still cooking does not
+# start a duplicate piper run.
+_audio_jobs = set()
+_audio_jobs_lock = threading.Lock()
+
 
 class NarrateRequest(BaseModel):
     filename: str
+
+
+def meta_path(filename: str) -> Path:
+    return CACHE_DIR / f"{Path(filename).name}.json"
 
 
 def audio_path(filename: str) -> Path:
@@ -32,15 +49,28 @@ def audio_path(filename: str) -> Path:
     return CACHE_DIR / f"{Path(filename).name}.wav"
 
 
-def generate_blurb(image_path: Path) -> str:
+def generate_narration(image_path: Path) -> dict:
     result = subprocess.run(
         [
-            "claude", "-p", BLURB_PROMPT.format(path=image_path),
+            "claude", "-p", NARRATION_PROMPT.format(path=image_path),
             "--allowed-tools", "Read",
         ],
         capture_output=True, text=True, timeout=120, check=True,
     )
-    return result.stdout.strip()
+    raw = result.stdout.strip()
+    # Claude sometimes wraps JSON in a markdown fence despite the prompt.
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        if raw.lower().startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+    data = json.loads(raw)
+    return {
+        "title": str(data.get("title") or "Untitled"),
+        "artist": str(data.get("artist") or "Unknown"),
+        "year": str(data.get("year") or "Unknown"),
+        "text": str(data.get("text") or "").strip(),
+    }
 
 
 def synthesize(text: str, out_path: Path) -> None:
@@ -53,22 +83,50 @@ def synthesize(text: str, out_path: Path) -> None:
     tmp_path.rename(out_path)
 
 
+def ensure_audio(name: str, text: str) -> None:
+    out_path = audio_path(name)
+    if out_path.is_file():
+        return
+    with _audio_jobs_lock:
+        if name in _audio_jobs:
+            return
+        _audio_jobs.add(name)
+    try:
+        synthesize(text, out_path)
+    finally:
+        with _audio_jobs_lock:
+            _audio_jobs.discard(name)
+
+
 @app.post("/narrate")
 def narrate(req: NarrateRequest):
-    image_path = IMAGES_DIR / Path(req.filename).name
+    name = Path(req.filename).name
+    image_path = IMAGES_DIR / name
     if not image_path.is_file():
         raise HTTPException(404, "no such image")
 
-    out_path = audio_path(req.filename)
-    if out_path.is_file():
-        return {"ready": True, "path": f"narration/{out_path.name}"}
+    m_path = meta_path(name)
+    if m_path.is_file():
+        meta = json.loads(m_path.read_text())
+    else:
+        try:
+            meta = generate_narration(image_path)
+            if not meta["text"]:
+                raise RuntimeError("empty narration text")
+        except Exception as e:
+            raise HTTPException(502, f"narration failed: {e}")
+        m_path.parent.mkdir(parents=True, exist_ok=True)
+        m_path.write_text(json.dumps(meta))
 
-    try:
-        blurb = generate_blurb(image_path)
-        if not blurb:
-            raise RuntimeError("empty blurb")
-        synthesize(blurb, out_path)
-    except Exception as e:
-        raise HTTPException(502, f"narration failed: {e}")
+    audio_ready = audio_path(name).is_file()
+    if not audio_ready:
+        threading.Thread(target=ensure_audio, args=(name, meta["text"]), daemon=True).start()
 
-    return {"ready": True, "path": f"narration/{out_path.name}"}
+    return {
+        "title": meta["title"],
+        "artist": meta["artist"],
+        "year": meta["year"],
+        "text": meta["text"],
+        "audio_ready": audio_ready,
+        "audio_path": f"narration/{name}.wav",
+    }
