@@ -12,18 +12,22 @@ CACHE_DIR = IMAGES_DIR / "narration"
 VOICE_MODEL = os.environ["PIPER_VOICE_MODEL"]
 
 NARRATION_PROMPT = (
-    "Look at the painting image at {path}. Identify the artwork, its "
-    "painter, and the year it was made, if you can tell from the image "
-    "itself. Respond with ONLY a JSON object (no markdown fences, no "
-    "commentary) with exactly these keys: "
+    "Look at the painting image at {path}. Describe its distinctive subject "
+    "matter, style, and any visible text (signature, title card, museum "
+    "label) to yourself, then use the WebSearch tool to try to verify the "
+    "artwork's title, painter, and year from those details -- a guess from "
+    "visual memory alone is often wrong, so confirm it against search "
+    "results before committing to an attribution. Respond with ONLY a JSON "
+    "object (no markdown fences, no commentary) with exactly these keys: "
     "\"title\" (the painting's title, or \"Untitled\" if unknown), "
     "\"artist\" (the painter's name, or \"Unknown\" if you cannot tell), "
     "\"year\" (a year or short date range as a string, or \"Unknown\"), "
     "\"text\" (a warm, spoken-style script of about 100-150 words: a "
     "little context about the piece, then a brief history of the painter "
     "-- plain prose only, nothing but the words to be read aloud; if you "
-    "cannot identify the piece confidently, say so plainly in this field "
-    "and describe what you see instead of guessing a false attribution)."
+    "cannot verify the piece confidently even after searching, say so "
+    "plainly in this field and describe what you see instead of guessing a "
+    "false attribution)."
 )
 
 app = FastAPI()
@@ -53,9 +57,9 @@ def generate_narration(image_path: Path) -> dict:
     result = subprocess.run(
         [
             "claude", "-p", NARRATION_PROMPT.format(path=image_path),
-            "--allowed-tools", "Read",
+            "--allowed-tools", "Read", "WebSearch",
         ],
-        capture_output=True, text=True, timeout=120, check=True,
+        capture_output=True, text=True, timeout=180, check=True,
     )
     raw = result.stdout.strip()
     # Claude sometimes wraps JSON in a markdown fence despite the prompt.
