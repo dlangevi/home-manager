@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, pkgs-unstable, ... }:
 
 {
   imports = [
@@ -42,47 +42,55 @@
     autoStart = true;
     openFirewall = true;
 
-    # capSysAdmin must stay false on this host, and that is load-bearing
-    # rather than a tidy-up. It exists so the KMS/portal capture backends can
-    # grab the screen, which only matters under Wayland -- this host pins
-    # plasmax11 and sddm.wayland.enable = false, so capture goes through X11,
-    # which needs no capability at all.
+    # Pinned to nixpkgs-unstable rather than the nixos-26.05 pin (2026.516 vs
+    # 2026.914 as of this writing) -- Sunshine ships stable releases far more
+    # often than this channel branches, so the channel pin runs stale for
+    # months at a time otherwise.
+    package = pkgs-unstable.sunshine;
+
+    # capSysAdmin stays false on this host, but NOT because of the CUDA/
+    # AT_SECURE conflict this comment used to describe -- that no longer
+    # reproduces (checked 2026-11-09, driver 595.71.05, RTX 2070 SUPER: a
+    # cap_sys_admin+p file-capability binary still initialises CUDA fine,
+    # `cuInit`/`cuDeviceGet` both succeed, AT_SECURE or not). The finding was
+    # against the GTX 1060 this host had before the GPU swap, on whatever
+    # driver was current then; NVIDIA likely patched the refusal at some
+    # point since. Left here as a dead end so nobody re-discovers it from
+    # scratch, not as the reason for the current value.
     #
-    # Turning it on actively breaks NVENC. The module implements it with a
-    # security.wrapper carrying cap_sys_admin+p, and any file capability makes
-    # the process AT_SECURE, which NVIDIA's libcuda refuses to initialise in:
-    #
-    #   Error: Failed to create a CUDA device: Operation not permitted
-    #
-    # Sunshine then walks nvenc -> vulkan -> vaapi -> software, fails all four
-    # and exits with "Unable to find display or encoder during startup". The
-    # error names neither CAP_SYS_ADMIN nor the GPU, so it reads like a driver
-    # fault rather than a capability one.
-    capSysAdmin = false;
+    # Now true: Wayland is being staged as a selectable (not yet default)
+    # SDDM session below, specifically to fix a confirmed Sunshine X11
+    # capture race (see docs/superpowers/specs/2026-11-09-wayland-sunshine-
+    # capture-design.md) -- KMS/portal capture under Wayland needs this.
+    # The CUDA/AT_SECURE angle is cleared (re-tested above); see that spec's
+    # Task 1 for the separate, broader NVIDIA+KWin-Wayland stability survey
+    # this change also depended on.
+    capSysAdmin = true;
     settings = {
       # Restrict capture to the 1440p monitor; the second display confuses
       # single-screen Moonlight clients.
       #
-      # This is an INDEX, not a connector name. Sunshine's X11 backend parses
-      # output_name as an integer; a name like "DP-2" parses to garbage and
-      # produces the misleading
+      # Connector name, not the numeric index this used to be set to. The
+      # numeric index ("5", matching the "(id: 5)" XRandR prints next to
+      # DP-4 in `journalctl --user -u sunshine | grep "Detected display"`)
+      # builds and starts fine but silently streams DP-0 instead -- Sunshine's
+      # logged enumeration order and its actual output_name index lookup are
+      # two different code paths that only happen to agree sometimes
+      # (upstream: LizardByte/Sunshine#221).
       #
-      #   Could not stream display number [23172], there are only [7] displays
+      # The earlier attempt at a connector-name value ("DP-2") failed with
+      # "Could not stream display number [23172], there are only [7]
+      # displays" -- but that was the wrong name (DP-2 is the old GPU's KMS
+      # name, surviving stale into the 2070 SUPER's X11 driver naming, where
+      # it's now a disconnected output) on a Sunshine build that predates
+      # upstream PR #5423 (closed 2026-07-22), which is what made connector
+      # names a real, index-independent alternative to begin with. The
+      # running build here (2026.914.233613) postdates that fix.
       #
-      # 7 is every XRandR output including disconnected ones, so the index
-      # space covers dark outputs too and is positional.
-      #
-      # Beware two different namespaces for the same hardware: the kernel/KMS
-      # side calls these DP-1/DP-2/DP-3/HDMI-A-1, while the nvidia X driver
-      # calls them DP-0..DP-5/HDMI-0. "DP-2" was the old card's KMS name and
-      # survived the swap to the 2070 SUPER; under X11 DP-2 is now a
-      # disconnected output, and the 1440p panel is DP-4 at index 5.
-      #
-      # Re-derive after any GPU or cable change -- the index moves. Sunshine
-      # prints the mapping at startup:
-      #   journalctl --user -u sunshine | grep "Detected display"
-      #   -> Detected display: DP-4 (id: 5)DP-4 connected: true
-      output_name = "5";
+      # Re-derive after any GPU or cable change: `xrandr --query` for the
+      # connector name next to the 1440p resolution, or `journalctl --user
+      # -u sunshine | grep "Detected display"` for Sunshine's own view of it.
+      output_name = "DP-4";
 
       # `resolutions` and `fps` used to be set here. They are not Sunshine
       # options and never were on this version -- it logs
@@ -297,9 +305,21 @@
     # nixpkgs 26.05) is correct here.
   };
 
-  # NVIDIA on Wayland is flaky — stay on X11
+  # Staged cutover (see docs/superpowers/specs/2026-11-09-wayland-sunshine-
+  # capture-design.md and its plan): Wayland is now *selectable* at the SDDM
+  # login screen, but plasmax11 stays the default until a manual Wayland
+  # login has actually been tested end to end (compositor stability, the
+  # fefw-recomp XWayland game, Sunshine's capture backend and output_name
+  # re-derived). The "NVIDIA on Wayland is flaky" caution this replaced had
+  # no dated source behind it; a fresh 2026-11-09 survey found no blocker
+  # for this hardware (RTX 2070 SUPER, driver 595.71.05, KWin 6.6.6 -- past
+  # the one confirmed driver/compositor bug, fixed in 6.6.5) but did surface
+  # three live constraints to carry forward: keep focus-stealing prevention
+  # off "high", keep games on DP-4 not DP-0 (KDE#502390, mixed-resolution
+  # XWayland bug with no fix target), and expect possible VRR/LFC flicker
+  # under framerate dips as a known open issue, not a new regression.
   services.displayManager.defaultSession = "plasmax11";
-  services.displayManager.sddm.wayland.enable = false;
+  services.displayManager.sddm.wayland.enable = true;
 
   # udev hidraw rule (dlangevi is in group "console" historically).
   #
