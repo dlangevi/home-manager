@@ -55,9 +55,18 @@
   # anyway -- services.sunshine.settings.output_name pins capture to DP-4 in
   # nixos/hosts/suspense.nix -- so a connected Moonlight client gets nothing
   # from it except desktop clutter. Disabling it for the session's duration
-  # instead gives DP-4 the whole desktop, and doubling its scale makes the
-  # remote UI legible on a TV/phone client instead of 1440p-native text
-  # rendered tiny on a small remote screen.
+  # instead gives DP-4 the whole desktop.
+  #
+  # No scale bump here (yet). The original intent was to also double DP-4's
+  # scale for legibility on a remote client, but kscreen-doctor's "scale" verb
+  # is a no-op on this X11 session -- confirmed live (2026-11-09): setting
+  # output.DP-4.scale.2 returns success and `--json` still reports scale 1
+  # afterward. `--help` only documents *fractional* scale as Wayland-only,
+  # but integer scale is silently ignored here too; X11 has no live per-output
+  # DPI knob, only a global Qt env var read once at process start. Re-add the
+  # scale verb once suspense's Wayland migration (docs/superpowers/specs/
+  # 2026-11-09-wayland-sunshine-capture-design.md) lands, where KWin honors it
+  # live.
   #
   # prep-cmd's "do" runs on stream start, "undo" on stream end/disconnect --
   # both inherit almost no environment (same as a KDE global shortcut), hence
@@ -65,8 +74,11 @@
   #
   # DP-4 is repositioned to 0,0 while DP-0 is disabled so there's no dead
   # virtual-desktop gap to the left of it; undo restores both outputs' exact
-  # pre-stream geometry (measured on suspense: DP-0 at 0,219, DP-4 at 1920,0)
-  # rather than trusting KWin to reflow them back on its own.
+  # pre-stream geometry (measured on suspense: DP-0 at 0,219, DP-4 at 1920,0).
+  # Both do and undo name an explicit mode, not just position/enable -- tested
+  # live and found that `output.DP-0.enable` alone (after an interleaving
+  # disable of another output) left the output enabled but modeless, i.e.
+  # actually blank; naming the mode is what makes it come back with a picture.
   xdg.configFile."sunshine/apps.json" = lib.mkIf (hostname == "suspense") {
     text = builtins.toJSON {
       env.PATH = "$(PATH):$(HOME)/.local/bin";
@@ -76,8 +88,8 @@
           image-path = "desktop.png";
           prep-cmd = [
             {
-              do = "/run/current-system/sw/bin/kscreen-doctor output.DP-0.disable output.DP-4.position.0,0 output.DP-4.scale.2";
-              undo = "/run/current-system/sw/bin/kscreen-doctor output.DP-4.position.1920,0 output.DP-4.scale.1 output.DP-0.enable output.DP-0.position.0,219";
+              do = "/run/current-system/sw/bin/kscreen-doctor output.DP-0.disable output.DP-4.mode.2560x1440@165 output.DP-4.position.0,0";
+              undo = "/run/current-system/sw/bin/kscreen-doctor output.DP-4.mode.2560x1440@165 output.DP-4.position.1920,0 output.DP-0.enable output.DP-0.mode.1920x1080@165 output.DP-0.position.0,219";
             }
           ];
         }
