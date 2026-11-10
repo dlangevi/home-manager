@@ -51,34 +51,48 @@
     config.lib.file.mkOutOfStoreSymlink
       "/run/current-system/sw/share/systemd/user/plasma-krunner.service";
 
-  # Sunshine's single "Desktop" app: DP-0 (the 1080p panel) is never captured
-  # anyway -- services.sunshine.settings.output_name pins capture to DP-4 in
-  # nixos/hosts/suspense.nix -- so a connected Moonlight client gets nothing
-  # from it except desktop clutter. Disabling it for the session's duration
-  # instead gives DP-4 the whole desktop.
+  # Sunshine's single "Desktop" app: the 1080p panel is never captured anyway
+  # -- services.sunshine.settings.output_name pins capture to the 1440p panel
+  # in nixos/hosts/suspense.nix -- so a connected Moonlight client gets
+  # nothing from it except desktop clutter. Disabling it for the session's
+  # duration instead gives the 1440p panel the whole desktop, and doubling
+  # its scale makes the remote UI legible on a TV/phone client.
   #
-  # No scale bump here (yet). The original intent was to also double DP-4's
-  # scale for legibility on a remote client, but kscreen-doctor's "scale" verb
-  # is a no-op on this X11 session -- confirmed live (2026-11-09): setting
-  # output.DP-4.scale.2 returns success and `--json` still reports scale 1
-  # afterward. `--help` only documents *fractional* scale as Wayland-only,
-  # but integer scale is silently ignored here too; X11 has no live per-output
-  # DPI knob, only a global Qt env var read once at process start. Re-add the
-  # scale verb once suspense's Wayland migration (docs/superpowers/specs/
-  # 2026-11-09-wayland-sunshine-capture-design.md) lands, where KWin honors it
-  # live.
+  # Output names here are KWin/KScreen's Wayland names (DP-1 = 1080p,
+  # DP-3 = 1440p), NOT the X11 xrandr names this host used before migrating
+  # (DP-0/DP-4) -- confirmed different live post-migration (2026-11-09):
+  # same physical monitors, same EDIDs, but KScreen enumerates them under
+  # different connector names per display-server backend. Re-derive again
+  # (`kscreen-doctor -o`) after any future GPU/cable/backend change.
+  #
+  # The scale verb is live here (unlike X11, where it was confirmed a no-op
+  # and this bump was dropped for a session) -- tested directly against this
+  # Wayland session: `kscreen-doctor output.DP-3.scale.2` actually took
+  # effect per `--json`, restored to 1 right after.
   #
   # prep-cmd's "do" runs on stream start, "undo" on stream end/disconnect --
   # both inherit almost no environment (same as a KDE global shortcut), hence
   # the absolute /run/current-system/sw/bin path rather than a bare command.
   #
-  # DP-4 is repositioned to 0,0 while DP-0 is disabled so there's no dead
+  # DP-3 is repositioned to 0,0 while DP-1 is disabled so there's no dead
   # virtual-desktop gap to the left of it; undo restores both outputs' exact
-  # pre-stream geometry (measured on suspense: DP-0 at 0,219, DP-4 at 1920,0).
-  # Both do and undo name an explicit mode, not just position/enable -- tested
-  # live and found that `output.DP-0.enable` alone (after an interleaving
-  # disable of another output) left the output enabled but modeless, i.e.
-  # actually blank; naming the mode is what makes it come back with a picture.
+  # pre-stream geometry and scale (measured on suspense post-migration: DP-1
+  # at 0,0 1920x1080 scale 1, DP-3 at 1920,0 2560x1440 scale 1). Both do and
+  # undo name an explicit mode, not just position/enable -- tested live
+  # (under the prior X11 naming, same principle applies) and found that
+  # `output.<name>.enable` alone, after an interleaving disable of another
+  # output, left the output enabled but modeless, i.e. actually blank; naming
+  # the mode is what makes it come back with a picture.
+  #
+  # vrrpolicy.never on DP-3 during streaming: the first live Wayland stream
+  # (2026-11-09) showed visible strobing, matching the exact open, unfixed
+  # NVIDIA-595.x/KWin-6.6.x VRR+LFC flicker bug flagged as a live risk by this
+  # migration's own stability survey -- DP-3's VRR policy was "Automatic".
+  # Forcing it off for the stream's duration (confirmed via `kscreen-doctor
+  # -o` to actually stick, unlike the scale verb's X11 no-op) resolved it;
+  # undo sets it back to "automatic" so local desktop use outside a stream
+  # keeps VRR. `vrrpolicy`, not `vrr` -- the latter isn't a recognized verb
+  # (confirmed: `output.DP-3.vrr.never` errors "Unable to parse arguments").
   xdg.configFile."sunshine/apps.json" = lib.mkIf (hostname == "suspense") {
     text = builtins.toJSON {
       env.PATH = "$(PATH):$(HOME)/.local/bin";
@@ -88,8 +102,8 @@
           image-path = "desktop.png";
           prep-cmd = [
             {
-              do = "/run/current-system/sw/bin/kscreen-doctor output.DP-0.disable output.DP-4.mode.2560x1440@165 output.DP-4.position.0,0";
-              undo = "/run/current-system/sw/bin/kscreen-doctor output.DP-4.mode.2560x1440@165 output.DP-4.position.1920,0 output.DP-0.enable output.DP-0.mode.1920x1080@165 output.DP-0.position.0,219";
+              do = "/run/current-system/sw/bin/kscreen-doctor output.DP-1.disable output.DP-3.mode.2560x1440@165 output.DP-3.position.0,0 output.DP-3.scale.2 output.DP-3.vrrpolicy.never";
+              undo = "/run/current-system/sw/bin/kscreen-doctor output.DP-3.vrrpolicy.automatic output.DP-3.scale.1 output.DP-3.mode.2560x1440@165 output.DP-3.position.1920,0 output.DP-1.enable output.DP-1.mode.1920x1080@165 output.DP-1.position.0,0";
             }
           ];
         }

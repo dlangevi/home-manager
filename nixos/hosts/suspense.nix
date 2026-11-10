@@ -87,10 +87,18 @@
       # names a real, index-independent alternative to begin with. The
       # running build here (2026.914.233613) postdates that fix.
       #
-      # Re-derive after any GPU or cable change: `xrandr --query` for the
-      # connector name next to the 1440p resolution, or `journalctl --user
-      # -u sunshine | grep "Detected display"` for Sunshine's own view of it.
-      output_name = "DP-4";
+      # "DP-4" above was the X11 xrandr name for the 1440p panel. Migrating
+      # suspense to Plasma Wayland (2026-11-09) changed Sunshine's capture
+      # backend from X11 to KMS, and KMS enumerates the same physical
+      # monitors under different connector names -- confirmed live: Sunshine
+      # logged "Couldn't map 'DP-4' to a monitor index. Falling back to first
+      # monitor in list", which silently streamed the wrong (1080p) panel
+      # instead of erroring. Its own "Start of KMS monitor list" log named
+      # the 1440p panel (AUS VG32VQ1B) "DP-3". Re-derive after any GPU/cable
+      # change, or a display-server backend change like this one, via
+      # `journalctl --user -u sunshine | grep -A2 "KMS monitor list"` --
+      # xrandr's naming no longer applies at all under this backend.
+      output_name = "DP-3";
 
       # `resolutions` and `fps` used to be set here. They are not Sunshine
       # options and never were on this version -- it logs
