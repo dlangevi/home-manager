@@ -36,7 +36,7 @@
 #      to snapctl as well would be a second, worse surface for the same thing.
 #
 # Only the keys named below are written -- see overrideConfig.
-{ config, snapctl, ... }:
+{ config, lib, hostname, snapctl, ... }:
 {
   # Pull KRunner up to login time. plasma-workspace.target is the right anchor:
   # it is reached once the desktop is actually up, so krunner warms in the idle
@@ -50,6 +50,40 @@
   xdg.configFile."systemd/user/plasma-workspace.target.wants/plasma-krunner.service".source =
     config.lib.file.mkOutOfStoreSymlink
       "/run/current-system/sw/share/systemd/user/plasma-krunner.service";
+
+  # Sunshine's single "Desktop" app: DP-0 (the 1080p panel) is never captured
+  # anyway -- services.sunshine.settings.output_name pins capture to DP-4 in
+  # nixos/hosts/suspense.nix -- so a connected Moonlight client gets nothing
+  # from it except desktop clutter. Disabling it for the session's duration
+  # instead gives DP-4 the whole desktop, and doubling its scale makes the
+  # remote UI legible on a TV/phone client instead of 1440p-native text
+  # rendered tiny on a small remote screen.
+  #
+  # prep-cmd's "do" runs on stream start, "undo" on stream end/disconnect --
+  # both inherit almost no environment (same as a KDE global shortcut), hence
+  # the absolute /run/current-system/sw/bin path rather than a bare command.
+  #
+  # DP-4 is repositioned to 0,0 while DP-0 is disabled so there's no dead
+  # virtual-desktop gap to the left of it; undo restores both outputs' exact
+  # pre-stream geometry (measured on suspense: DP-0 at 0,219, DP-4 at 1920,0)
+  # rather than trusting KWin to reflow them back on its own.
+  xdg.configFile."sunshine/apps.json" = lib.mkIf (hostname == "suspense") {
+    text = builtins.toJSON {
+      env.PATH = "$(PATH):$(HOME)/.local/bin";
+      apps = [
+        {
+          name = "Desktop";
+          image-path = "desktop.png";
+          prep-cmd = [
+            {
+              do = "/run/current-system/sw/bin/kscreen-doctor output.DP-0.disable output.DP-4.position.0,0 output.DP-4.scale.2";
+              undo = "/run/current-system/sw/bin/kscreen-doctor output.DP-4.position.1920,0 output.DP-4.scale.1 output.DP-0.enable output.DP-0.position.0,219";
+            }
+          ];
+        }
+      ];
+    };
+  };
 
   programs.plasma = {
     enable = true;
@@ -177,6 +211,20 @@
           ".local/share/Steam"
         ]);
       };
+
+      # KWin's fullscreen-unredirect optimization (an app in exclusive
+      # fullscreen gets to write straight to the front buffer, bypassing the
+      # compositor) is exactly what breaks Sunshine's X11 capture: Sunshine
+      # grabs a snapshot of that buffer with no atomic swap to sync against,
+      # so a capture mid-scanout shows old pixels above the tear line and new
+      # pixels below it. Only visible over Moonlight -- the local display
+      # scans out the same buffer and never notices the tear.
+      #
+      # WindowsBlockCompositing=false keeps the compositor live through
+      # fullscreen games, which is what Sunshine needs here, at the cost of
+      # the unredirect fast-path's local-only performance win -- irrelevant
+      # for a machine whose point is to be streamed from.
+      kwinrc."Compositing"."WindowsBlockCompositing" = false;
     };
   };
 }
