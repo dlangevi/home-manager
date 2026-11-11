@@ -46,26 +46,43 @@
     # 2026.914 as of this writing) -- Sunshine ships stable releases far more
     # often than this channel branches, so the channel pin runs stale for
     # months at a time otherwise.
-    package = pkgs-unstable.sunshine;
-
-    # capSysAdmin stays false on this host, but NOT because of the CUDA/
-    # AT_SECURE conflict this comment used to describe -- that no longer
-    # reproduces (checked 2026-11-09, driver 595.71.05, RTX 2070 SUPER: a
-    # cap_sys_admin+p file-capability binary still initialises CUDA fine,
-    # `cuInit`/`cuDeviceGet` both succeed, AT_SECURE or not). The finding was
-    # against the GTX 1060 this host had before the GPU swap, on whatever
-    # driver was current then; NVIDIA likely patched the refusal at some
-    # point since. Left here as a dead end so nobody re-discovers it from
-    # scratch, not as the reason for the current value.
     #
-    # Now true: Wayland is being staged as a selectable (not yet default)
-    # SDDM session below, specifically to fix a confirmed Sunshine X11
-    # capture race (see docs/superpowers/specs/2026-11-09-wayland-sunshine-
-    # capture-design.md) -- KMS/portal capture under Wayland needs this.
-    # The CUDA/AT_SECURE angle is cleared (re-tested above); see that spec's
-    # Task 1 for the separate, broader NVIDIA+KWin-Wayland stability survey
-    # this change also depended on.
-    capSysAdmin = true;
+    # Needs libcuda.so.1 (at the driver's `/run/opengl-driver/lib`, outside
+    # the Nix store) for NVENC, which it dlopens at runtime rather than
+    # linking -- so nixpkgs' normal dependency-closure RPATH never includes
+    # it, and without this override NVENC silently falls back to Vulkan
+    # Video encode (visible strobing artifacts on this NVIDIA/KWin combo).
+    # Confirmed live 2026-11-09 via `journalctl --user -u sunshine`:
+    # "Attempting to use NVENC without CUDA support" -> "[CUDA] Cannot load
+    # libcuda.so.1" -> "Failed to create a CUDA device: Operation not
+    # permitted".
+    #
+    # `autoAddDriverRunpath` is nixpkgs' own hook for exactly this case
+    # (dlopen'd driver libs); the package already uses it when built with
+    # `cudaSupport`, just not in the nixpkgs binary cache's default build.
+    # A hand-rolled `patchelf --add-rpath` in `postFixup` does NOT work here:
+    # `autoPatchelfHook` (already in this package's nativeBuildInputs) runs
+    # after `postFixup` and recomputes the RPATH from the binary's actual
+    # linked (DT_NEEDED) dependencies, silently dropping any manual addition
+    # for a dlopen'd lib it doesn't know about -- confirmed via `patchelf
+    # --print-rpath` on an overridden build. `autoAddDriverRunpath` is built
+    # to survive that pass; a manual patchelf call is not.
+    package = pkgs-unstable.sunshine.overrideAttrs (old: {
+      nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs-unstable.autoAddDriverRunpath ];
+    });
+
+    # Back to false (2026-11-11): the Wayland cutover below was reverted --
+    # XWayland games under Plasma Wayland hit a known, widely-reported
+    # NVIDIA/KWin flicker/tearing-artifact class (short horizontal white
+    # lines; see docs/superpowers/specs/2026-11-09-wayland-sunshine-capture-
+    # design.md for the attempt and its findings) that outweighed the
+    # original X11 capture-race problem this migration was trying to fix.
+    # true was only ever needed for Wayland's KMS/portal capture backend; it
+    # buys nothing under X11 capture, and false keeps the simpler wrapper-
+    # free unit. The CUDA/AT_SECURE conflict this used to reintroduce is
+    # fixed unconditionally via the RPATH override above now, so it is not a
+    # reason to leave this true either way.
+    capSysAdmin = false;
     settings = {
       # Restrict capture to the 1440p monitor; the second display confuses
       # single-screen Moonlight clients.
@@ -87,18 +104,30 @@
       # names a real, index-independent alternative to begin with. The
       # running build here (2026.914.233613) postdates that fix.
       #
-      # "DP-4" above was the X11 xrandr name for the 1440p panel. Migrating
-      # suspense to Plasma Wayland (2026-11-09) changed Sunshine's capture
-      # backend from X11 to KMS, and KMS enumerates the same physical
-      # monitors under different connector names -- confirmed live: Sunshine
-      # logged "Couldn't map 'DP-4' to a monitor index. Falling back to first
-      # monitor in list", which silently streamed the wrong (1080p) panel
-      # instead of erroring. Its own "Start of KMS monitor list" log named
-      # the 1440p panel (AUS VG32VQ1B) "DP-3". Re-derive after any GPU/cable
-      # change, or a display-server backend change like this one, via
-      # `journalctl --user -u sunshine | grep -A2 "KMS monitor list"` --
-      # xrandr's naming no longer applies at all under this backend.
-      output_name = "DP-3";
+      # "DP-4" above is the X11 xrandr name for the 1440p panel. Plasma
+      # Wayland switches Sunshine's capture backend from X11 to KMS, and KMS
+      # enumerates the same physical monitors under different connector
+      # names entirely -- confirmed live while briefly testing Wayland as
+      # the logged-in session (2026-11-09): with output_name left at "DP-4",
+      # Sunshine logged "Couldn't map 'DP-4' to a monitor index. Falling
+      # back to first monitor in list", which silently streamed the wrong
+      # (1080p) panel instead of erroring. Its own "Start of KMS monitor
+      # list" log named the 1440p panel (AUS VG32VQ1B) "DP-3" there.
+      #
+      # Sunshine picks its capture backend from the session actually logged
+      # in, not from this module's defaultSession setting below -- so a
+      # manual Wayland login while plasmax11 stays the configured default
+      # would still need "DP-3" here, and this conditional would guess wrong
+      # for exactly that case. It is only meant to track the common case
+      # (whichever session is actually the default), not override it.
+      # Re-derive either name after any GPU/cable change via
+      # `journalctl --user -u sunshine | grep -A2 "KMS monitor list"` (KMS)
+      # or `| grep "Detected display"` (X11) -- the two backends' naming
+      # don't relate to each other at all.
+      output_name =
+        if config.services.displayManager.defaultSession == "plasmax11"
+        then "DP-4"
+        else "DP-3";
 
       # `resolutions` and `fps` used to be set here. They are not Sunshine
       # options and never were on this version -- it logs
@@ -167,18 +196,6 @@
       #   nvenc_realtime_hags -- Windows-only (HAGS); no effect on Linux.
     };
   };
-
-  # Required by capSysAdmin = false above, and the two must move together.
-  # With the wrapper gone the unit execs the bare ELF from the store, and the
-  # module sets no library path, so libcuda.so.1 is simply not found:
-  #
-  #   Error: [CUDA @ ...] Cannot load libcuda.so.1
-  #
-  # That is the same "Encoder [nvenc] failed" symptom as the capability bug
-  # with an unrelated cause, so dropping capSysAdmin without this line looks
-  # like the fix did nothing.
-  systemd.user.services.sunshine.environment.LD_LIBRARY_PATH =
-    "${pkgs.addDriverRunpath.driverLink}/lib";
 
   # Resilio Sync removed. It was the single loudest thing on this machine:
   # rslsync runs with its debug log mask at FFFFFFFF and wrote 11307 of the
@@ -313,19 +330,22 @@
     # nixpkgs 26.05) is correct here.
   };
 
-  # Staged cutover (see docs/superpowers/specs/2026-11-09-wayland-sunshine-
-  # capture-design.md and its plan): Wayland is now *selectable* at the SDDM
-  # login screen, but plasmax11 stays the default until a manual Wayland
-  # login has actually been tested end to end (compositor stability, the
-  # fefw-recomp XWayland game, Sunshine's capture backend and output_name
-  # re-derived). The "NVIDIA on Wayland is flaky" caution this replaced had
-  # no dated source behind it; a fresh 2026-11-09 survey found no blocker
-  # for this hardware (RTX 2070 SUPER, driver 595.71.05, KWin 6.6.6 -- past
-  # the one confirmed driver/compositor bug, fixed in 6.6.5) but did surface
-  # three live constraints to carry forward: keep focus-stealing prevention
-  # off "high", keep games on DP-4 not DP-0 (KDE#502390, mixed-resolution
-  # XWayland bug with no fix target), and expect possible VRR/LFC flicker
-  # under framerate dips as a known open issue, not a new regression.
+  # Reverted back to plasmax11 (2026-11-11): the Wayland cutover (see
+  # docs/superpowers/specs/2026-11-09-wayland-sunshine-capture-design.md and
+  # its plan) was briefly completed and tested end to end over a live
+  # Moonlight stream -- it fixed the original X11 capture-race problem, but
+  # surfaced a worse one in trade: streaming an XWayland game (Steam/Proton)
+  # under Plasma Wayland produced short horizontal white-line artifacting, a
+  # known and still-unresolved class of NVIDIA/KWin/XWayland bug (reports
+  # span NVIDIA driver forums and KDE bugzilla, not specific to this host --
+  # see that spec for the links gathered 2026-11-11) rather than anything
+  # fixable here. Wayland stays selectable at the SDDM login screen (below)
+  # for whenever upstream moves on this, but is no longer the default.
+  #
+  # This also flips the `output_name` conditional above back to "DP-4" --
+  # that conditional keys off this same defaultSession value, which is
+  # exactly why it has to move back in lockstep rather than being left at
+  # "plasma" while logging into plasmax11 by hand.
   services.displayManager.defaultSession = "plasmax11";
   services.displayManager.sddm.wayland.enable = true;
 

@@ -136,6 +136,7 @@
 
       mkNixos = host: nixpkgs.lib.nixosSystem {
         inherit system;
+        specialArgs = { inherit pkgs-unstable; };
         modules = [
           ./nixos/common.nix
           ./nixos/hosts/${host}.nix
