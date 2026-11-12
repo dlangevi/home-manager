@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1790664454,
-        "narHash": "sha256-aXLvjmyo1pgLuVJ74RIXght+v7kldatVQTNDaUph6HU=",
+        "lastModified": 1794504941,
+        "narHash": "sha256-cw9hmEwBAYLoggGXCE0Dil4gH/Hg+mNi/JUj+oLIohI=",
         "ref": "refs/heads/main",
-        "rev": "7e28d9747fcccbc5c012871da84d9cc0eb23c3e6",
-        "revCount": 211,
+        "rev": "3610f3b41d335cd819905d9e0bf3f0b70e1f9e78",
+        "revCount": 215,
         "type": "git",
         "url": "ssh://git@github.com/dlangevi/dl-herd.git"
       },
