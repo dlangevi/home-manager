@@ -71,6 +71,13 @@
     description = "console";
     extraGroups = [ "networkmanager" "wheel" "console" ];
     packages = with pkgs; [ kdePackages.kate ];
+    # suspense's admin key (programs.ssh "suspense"/"dance" match blocks on
+    # suspense, ~/.ssh/id_admin there), so suspense can reach console for
+    # dlsys rollout / ad-hoc admin. Same bytes as the dlangevi@uwaterloo.ca
+    # entry in nixos/hosts/dance.nix.
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINsXz3cvNB2Hp9walgAmlqjPNkWgOKVgvtbKis1N0m/O dlangevi@uwaterloo.ca"
+    ];
   };
 
   # No Steam here. Gaming on console is Moonlight streaming from suspense

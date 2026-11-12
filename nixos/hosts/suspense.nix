@@ -380,6 +380,12 @@
     # sessions work and non-seated ones fail confusingly.
     extraGroups = [ "networkmanager" "wheel" "console" "cdrom" ];
     packages = with pkgs; [ kdePackages.kate ];
+    # console's admin key (programs.ssh "console" match block on console,
+    # ~/.ssh/id_admin there), so console can reach suspense for ad-hoc admin.
+    # Same bytes as the console@dance-admin entry in nixos/hosts/dance.nix.
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOW8W08WgSljSKmZKJjkDd8HGQ9a2K+hMjrfr3BCYmtv console@dance-admin"
+    ];
   };
 
   # Run non-Nix binaries
