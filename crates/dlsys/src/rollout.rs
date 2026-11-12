@@ -11,18 +11,15 @@ use crate::switch;
 /// Upgrade order. suspense first: it runs the snapcast/music server that
 /// dance's snapclient connects to.
 ///
-/// console is deliberately NOT here. The bash version listed it while its own
-/// usage text said "default: suspense,dance" and "console is not covered --
-/// it is unreachable from the tailnet", so a bare `dlsys rollout` upgraded
-/// both real hosts and then hung on an ssh timeout to console before
-/// reporting failure. Confirmed unreachable when this was written
-/// (connection timed out). It stays in `ssh_target`, so `--order console`
-/// still works the day it joins the tailnet.
-pub const DEFAULT_ORDER: &[&str] = &["suspense", "dance"];
+/// console used to be excluded here because it was unreachable from the
+/// tailnet and a bare `dlsys rollout` would hang on an ssh timeout to it
+/// before reporting failure. Now that `run` attempts every host and reports
+/// per-host success/failure instead of aborting on the first one, an
+/// unreachable console just fails gracefully alongside whatever else
+/// succeeded, so it is safe to include unconditionally.
+pub const DEFAULT_ORDER: &[&str] = &["suspense", "dance", "console"];
 
-/// host -> ssh destination. console is here even though it is not in the
-/// default order, so naming it explicitly attempts a real connection rather
-/// than failing with "no ssh target".
+/// host -> ssh destination.
 pub fn ssh_target(host: &str) -> Option<&'static str> {
     match host {
         "suspense" => Some("dlangevi@suspense"),
@@ -302,27 +299,51 @@ pub fn run(
         }
     }
 
+    let (succeeded, failed) = attempt_hosts(runner, dir, &hosts, self_host, switch_self);
+
+    if !succeeded.is_empty() {
+        println!("\nUpgraded: {}", succeeded.join(" "));
+    }
+    if !failed.is_empty() {
+        // Deliberately not an error: an unreachable or failing host is
+        // skipped, not treated as a rollout failure, so the rest of the
+        // fleet still deploys and the command still exits 0.
+        eprintln!("Skipped (unreachable or failed): {}", failed.join(" "));
+    }
+    Ok(())
+}
+
+/// Attempt every host in order, never stopping early. A host that is
+/// unreachable or fails its switch must not stop the rest of the fleet from
+/// upgrading -- failures are collected and reported together at the end.
+fn attempt_hosts<'a>(
+    runner: &dyn Runner,
+    dir: &Path,
+    hosts: &'a [String],
+    self_host: &str,
+    switch_self: &dyn Fn() -> Result<()>,
+) -> (Vec<&'a str>, Vec<&'a str>) {
     let total = hosts.len();
+    let mut succeeded = Vec::new();
+    let mut failed = Vec::new();
     for (i, host) in hosts.iter().enumerate() {
         println!("\n==> [{}/{}] {}", i + 1, total, host);
         let ok = if host == self_host {
             switch_self().is_ok()
         } else {
             let target = ssh_target(host).expect("validated by resolve_hosts");
-            runner.run("ssh", &["-t", target, remote_command()], dir)?
+            runner
+                .run("ssh", &["-t", target, remote_command()], dir)
+                .unwrap_or(false)
         };
-        if !ok {
-            let remaining: Vec<&str> = hosts[i + 1..].iter().map(|s| s.as_str()).collect();
+        if ok {
+            succeeded.push(host.as_str());
+        } else {
             eprintln!("FAILED on {host}.");
-            if !remaining.is_empty() {
-                eprintln!("Not attempted: {}", remaining.join(" "));
-            }
-            return Err(anyhow!("rollout aborted at {host}"));
+            failed.push(host.as_str());
         }
     }
-
-    println!("\nUpgraded: {}", hosts.join(" "));
-    Ok(())
+    (succeeded, failed)
 }
 
 #[cfg(test)]
@@ -330,6 +351,7 @@ mod tests {
     use super::*;
     use crate::runner::{FakeRunner, Output};
     use std::collections::BTreeMap;
+    use std::fs;
     use std::path::PathBuf;
 
     struct Always(bool);
@@ -469,16 +491,15 @@ mod tests {
         assert!(pos("suspense") < pos("dance"), "{hosts:?}");
     }
 
-    /// console is unreachable from the tailnet, so a bare `rollout` must not
-    /// try it -- the bash version did, and hung on an ssh timeout after
-    /// upgrading both real hosts.
+    /// console is included by default now that an unreachable host fails
+    /// gracefully instead of aborting the rest of the rollout.
     #[test]
-    fn default_order_excludes_console() {
+    fn default_order_includes_console() {
         let hosts = resolve_hosts(None, &registered(&["suspense", "dance", "console"])).unwrap();
-        assert_eq!(hosts, vec!["suspense", "dance"], "{hosts:?}");
+        assert_eq!(hosts, vec!["suspense", "dance", "console"], "{hosts:?}");
     }
 
-    /// But asking for it explicitly still works, for the day it joins.
+    /// Naming it explicitly still works too.
     #[test]
     fn console_can_still_be_named_explicitly() {
         let hosts = resolve_hosts(
@@ -487,6 +508,54 @@ mod tests {
         )
         .unwrap();
         assert_eq!(hosts, vec!["console"]);
+    }
+
+    /// An unreachable or failing host must not stop the rest of the fleet
+    /// from upgrading.
+    #[test]
+    fn a_failed_host_does_not_abort_the_remaining_hosts() {
+        struct FailDance;
+        impl Runner for FailDance {
+            fn capture(&self, _: &str, _: &[&str], _: &Path) -> Result<Output> {
+                Ok(Output { ok: true, stdout: String::new() })
+            }
+            fn run(&self, program: &str, args: &[&str], _: &Path) -> Result<bool> {
+                if program == "ssh" && args.iter().any(|a| a.contains("dance")) {
+                    return Err(anyhow!("ssh: connection timed out"));
+                }
+                Ok(true)
+            }
+        }
+
+        let hosts = vec![
+            "dance".to_string(),
+            "console".to_string(),
+        ];
+        let (succeeded, failed) = attempt_hosts(
+            &FailDance,
+            &PathBuf::from("/repo"),
+            &hosts,
+            "suspense",
+            &|| Ok(()),
+        );
+        assert_eq!(failed, vec!["dance"], "{failed:?}");
+        assert_eq!(succeeded, vec!["console"], "{succeeded:?}");
+    }
+
+    /// The local host switches in-process rather than over ssh, and that
+    /// path's failure is just as graceful as a remote one's.
+    #[test]
+    fn self_host_failure_is_also_graceful() {
+        let hosts = vec!["suspense".to_string(), "dance".to_string()];
+        let (succeeded, failed) = attempt_hosts(
+            &FakeRunner::new(&[]),
+            &PathBuf::from("/repo"),
+            &hosts,
+            "suspense",
+            &|| Err(anyhow!("local switch failed")),
+        );
+        assert_eq!(failed, vec!["suspense"], "{failed:?}");
+        assert_eq!(succeeded, vec!["dance"], "{succeeded:?}");
     }
 
     /// A declined push must abort, not silently deploy the older pin to
@@ -532,5 +601,39 @@ mod tests {
         assert!(!c.contains("./dlsys"), "{c}");
         // `set -e` so a failed pull does not go on to switch a stale tree.
         assert!(c.starts_with("set -e;"), "{c}");
+    }
+
+    /// End-to-end: `run` itself must not return an error just because one
+    /// host was unreachable -- that host is skipped, not a rollout failure.
+    #[test]
+    fn run_skips_an_unreachable_host_without_erroring() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        fs::write(temp_dir.path().join("flake.nix"), "").unwrap();
+
+        let f = FakeRunner::new(&[
+            (
+                "machines.nix",
+                Output::out(r#"{"suspense":["base"],"dance":["base"],"console":["base"]}"#),
+            ),
+            ("status --porcelain", Output::out("")),
+            ("rev-parse --verify", Output::out("same")),
+            ("rev-parse HEAD", Output::out("same")),
+            ("ssh -t dance@dance", Output::fail()),
+            ("ssh -t console@console", Output::out("")),
+        ]);
+
+        let result = run(
+            &f,
+            temp_dir.path(),
+            None,
+            false,
+            "suspense",
+            &Always(true),
+            &|| Ok(()),
+        );
+
+        assert!(result.is_ok(), "{result:?}");
+        let calls = f.calls();
+        assert!(calls.iter().any(|c| c.contains("console@console")), "{calls:?}");
     }
 }
