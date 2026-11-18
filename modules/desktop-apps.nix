@@ -54,7 +54,6 @@ in
     filezilla
     anki-bin
     kdePackages.spectacle
-    kdePackages.kdeconnect-kde
     kdePackages.filelight
     floorp-bin
     moonlight-qt

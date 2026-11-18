@@ -214,12 +214,6 @@
       2234  # nicotine+ (soulseek listening port; match it in Preferences -> Network)
       42420 # vintagestory
     ];
-    allowedTCPPortRanges = [
-      { from = 1714; to = 1764; } # KDE Connect
-    ];
-    allowedUDPPortRanges = [
-      { from = 1714; to = 1764; } # KDE Connect
-    ];
   };
 
   # Removable media
@@ -324,10 +318,23 @@
 
     nvidiaSettings = true;
 
-    # No `package` pin. 580 was the last branch carrying Maxwell/Pascal/Volta
-    # and had to be pinned for the GTX 1060; Turing is unaffected by that drop
-    # and rides the current branch, so the module default (595.71.05 in
-    # nixpkgs 26.05) is correct here.
+    # Pinned to 620.70.06 (2026-11-13): testing NVIDIA bug 7014466, a Turing
+    # shader-compiler SIGILL ("Unsupported: extractelement <8 x i4>") that
+    # crashes Cyberpunk 2077 patch 3.0.88 at startup -- see
+    # github.com/HansKristian-Work/vkd3d-proton/issues/3405. NVIDIA confirmed
+    # a driver-side fix on 2026-11-02; 620.70.06 shipped two days later but
+    # inclusion is unconfirmed. nixpkgs here (locked ~2026-05) only packages
+    # 595.71.05, so this is built directly via mkDriver rather than from the
+    # nixpkgs nvidiaPackages set. Revert to no `package` pin (ride the module
+    # default) if this doesn't fix the crash, to avoid carrying a stale
+    # out-of-band pin once nixpkgs itself catches up.
+    package = config.boot.kernelPackages.nvidiaPackages.mkDriver {
+      version = "620.70.06";
+      sha256_64bit = "sha256-KRGOOr0IwHVZvMo9nHYjjQOUkK8DYqLlvPy+cgSv1LE=";
+      openSha256 = lib.fakeHash;
+      settingsSha256 = "sha256-CFBRmXFJ9eAf5BRlHMBolahz1Pshr9giI7zcZC29oZ8=";
+      persistencedSha256 = lib.fakeHash;
+    };
   };
 
   # Reverted back to plasmax11 (2026-11-11): the Wayland cutover (see
@@ -527,29 +534,15 @@
     };
   };
 
-  # Scoped to source rather than `openFirewall = true`, which would publish the
-  # API to the whole LAN unauthenticated -- ollama has no auth of its own. Same
-  # three subnets, for the same reason, as the navidrome/jellyfin rules in
-  # ../modules/media-audio.nix.
-  #
-  # 192.168.2.0/24 is the one that actually carries the phone: UniFi Teleport
-  # hands the handset a /32 on tun0 and it reaches this box from there, not
-  # from the tailnet. Omitting it fails in a way that looks like a routing
-  # problem rather than a firewall one -- ICMP is allowed by default, so the
-  # host pings fine and only the TCP connect times out.
-  #
-  # Two ports now: 11434 is ollama and 1234 is sd-server (../modules/
-  # stable-diffusion.nix). sd-server has no auth either, and its default web UI
-  # is served on that same port, so it gets exactly the same three subnets
-  # rather than anything looser.
-  networking.firewall.extraCommands =
-    let
-      subnets = [ "100.64.0.0/10" "192.168.2.0/24" "10.0.70.0/24" ];
-      ports = [ 11434 1234 ];
-      allow = port: subnet:
-        "iptables -A nixos-fw -p tcp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
-    in
-    lib.concatMapStringsSep "\n" (port: lib.concatMapStringsSep "\n" (allow port) subnets) ports;
+  # Deliberately unreachable from the network. ollama (11434) and sd-server
+  # (../modules/stable-diffusion.nix, 1234) both have no auth of their own,
+  # and were previously opened to the LAN/teleport/tailnet subnets for the
+  # phone chat app -- removed as part of a security review (2026-11-18) that
+  # flagged unauthenticated internal APIs reachable from a guest-adjacent
+  # subnet. Both still bind 0.0.0.0 and run locally; nothing routes to them
+  # from off-box any more. Re-add scoped `networking.firewall.extraCommands`
+  # rules here (see git history) if remote access to either is wanted again,
+  # ideally with auth in front of it this time.
 
   environment.systemPackages = with pkgs; [
     # This box has two EFI System Partitions -- the live 1000M one and the
