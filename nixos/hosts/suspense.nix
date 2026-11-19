@@ -218,6 +218,15 @@
   virtualisation.oci-containers.containers.wolf = {
     image = "ghcr.io/games-on-whales/wolf:stable";
     autoStart = true;
+    # Without these, Wolf tries to resolve a MAC for whatever IP it picks for
+    # its internal advertisement step, lands on tailscale0's
+    # 100.83.202.76 -- a virtual interface with no MAC -- and logs "Unable to
+    # get mac address" every ~3s forever. Same enp5s0 IP/MAC already pinned
+    # for WOL in modules/wake-suspense.nix.
+    environment = {
+      WOLF_INTERNAL_IP = "10.0.70.116";
+      WOLF_INTERNAL_MAC = "70:85:c2:54:95:95";
+    };
     volumes = [
       # Wolf's state dir (config.toml, apps.toml, per-profile save data).
       # Lives under auto/gaming, not in this repo or in /etc -- see the
