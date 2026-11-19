@@ -254,6 +254,13 @@
       # daemon itself -- this is upstream's documented design, not an
       # accidental privilege escalation.
       "/var/run/docker.sock:/var/run/docker.sock:rw"
+      # Docker-type apps (currently just Wolf UI) talk back to Wolf over
+      # /var/run/wolf/wolf.sock, which they mount from the *host* path of
+      # the same name. Without this bind mount, Wolf writes that socket
+      # inside its own container's private /var/run instead, the sibling
+      # container's mount source never exists on the real host, and Wolf UI
+      # fails immediately with "[CURL] Could not connect to server".
+      "/var/run/wolf:/var/run/wolf:rw"
       "/dev/:/dev/:rw"
       "/run/udev:/run/udev:rw"
     ];
