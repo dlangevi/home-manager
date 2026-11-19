@@ -210,6 +210,23 @@
   # because it names the kids and the game library. This block only wires
   # up the generic container/GPU infrastructure and the ports.
   virtualisation.docker.enable = true;
+  # Wolf's own container gets GPU access fine via CDI (the
+  # --device=nvidia.com/gpu=all below), but Wolf itself talks to the host's
+  # real Docker daemon over the mounted socket to spawn each game's child
+  # container, and asks Docker for the legacy "--runtime=nvidia" -- a name
+  # CDI alone never registers. enableNvidia registers that runtime in
+  # Docker's daemon settings. Without it, Docker logs "unknown or invalid
+  # runtime name: nvidia" for every app launch and the stream dies right
+  # after it starts.
+  #
+  # Upstream flags this option deprecated in favour of
+  # hardware.nvidia-container-toolkit.enable alone -- but read the module
+  # source (nixos/modules/services/hardware/nvidia-container-toolkit):
+  # that option on its own only wires up the newer CDI path (nvidia.com/gpu=
+  # device requests). The legacy runtimes.nvidia registration in Docker's
+  # daemon.settings, which is what this mkIf block alone adds, only fires
+  # off this option. Don't "clean up" the warning by dropping it.
+  virtualisation.docker.enableNvidia = true;
 
   # Requires the nvidia driver, already selected via
   # services.xserver.videoDrivers above.
