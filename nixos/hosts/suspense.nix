@@ -197,6 +197,65 @@
     };
   };
 
+  # Wolf (games-on-whales): lets the "console" device log into suspense over
+  # Moonlight into an isolated game-picker session instead of mirroring this
+  # desktop, with per-kid save-game isolation. Wolf ships only as a
+  # container image, so Docker is required regardless of what the apps
+  # inside it turn out to be; nvidia-container-toolkit gives those
+  # containers CDI-based access to the same card Sunshine already drives.
+  #
+  # Deliberately NOT declared here: Wolf's own config.toml/apps.toml,
+  # per-kid profiles, and the Hookshot save-swap scripts. All of that lives
+  # under ~/auto/gaming (see PROJECT.md there), which is not a GitHub repo,
+  # because it names the kids and the game library. This block only wires
+  # up the generic container/GPU infrastructure and the ports.
+  virtualisation.docker.enable = true;
+
+  # Requires the nvidia driver, already selected via
+  # services.xserver.videoDrivers above.
+  hardware.nvidia-container-toolkit.enable = true;
+
+  virtualisation.oci-containers.containers.wolf = {
+    image = "ghcr.io/games-on-whales/wolf:stable";
+    autoStart = true;
+    volumes = [
+      # Wolf's state dir (config.toml, apps.toml, per-profile save data).
+      # Lives under auto/gaming, not in this repo or in /etc -- see the
+      # comment above.
+      "/home/dlangevi/auto/gaming/wolf-state:/etc/wolf:rw"
+      # Wolf spawns its own per-app Docker containers (Wolf UI, any
+      # Docker-runner apps), so it needs to talk to the host's Docker
+      # daemon itself -- this is upstream's documented design, not an
+      # accidental privilege escalation.
+      "/var/run/docker.sock:/var/run/docker.sock:rw"
+      "/dev/:/dev/:rw"
+      "/run/udev:/run/udev:rw"
+    ];
+    extraOptions = [
+      "--network=host"
+      # NVIDIA_VISIBLE_DEVICES/NVIDIA_DRIVER_CAPABILITIES (the nvidia-docker1
+      # mechanism) only take effect if the container runtime itself is
+      # swapped to nvidia-container-runtime -- which is what
+      # virtualisation.docker.enableNvidia does, but the oci-containers
+      # backend here defaulted to podman regardless of
+      # virtualisation.docker.enable, and this is on the newer CDI path
+      # (hardware.nvidia-container-toolkit.enable) anyway. Request the GPU
+      # as a CDI device instead -- confirmed live against the generated
+      # spec at /var/run/cdi/nvidia-container-toolkit.json, which names its
+      # one GPU device "nvidia.com/gpu=all". Without this, Wolf starts but
+      # its GStreamer pipeline logs "Could not open library libcuda.so.1"
+      # and has no hardware encode.
+      "--device=nvidia.com/gpu=all"
+      "--device=/dev/dri/"
+      # Virtual controller emulation: uinput for Xbox-style pads, uhid for
+      # DualSense. Same two devices Sunshine's gamepad emulation above
+      # already relies on.
+      "--device=/dev/uinput"
+      "--device=/dev/uhid"
+      "--device-cgroup-rule=c 13:* rmw"
+    ];
+  };
+
   # Resilio Sync removed. It was the single loudest thing on this machine:
   # rslsync runs with its debug log mask at FFFFFFFF and wrote 11307 of the
   # 15481 journal lines in a boot -- 73% of the journal, and a standing 2 GB of
@@ -213,6 +272,14 @@
     allowedTCPPorts = [
       2234  # nicotine+ (soulseek listening port; match it in Preferences -> Network)
       42420 # vintagestory
+      47984 # Wolf (GameStream/Moonlight) HTTPS
+      47989 # Wolf (GameStream/Moonlight) HTTP
+      48010 # Wolf RTSP setup
+    ];
+    allowedUDPPorts = [
+      47999 # Wolf control
+      48100 # Wolf video
+      48200 # Wolf audio
     ];
   };
 
