@@ -452,7 +452,9 @@
     # cdrom: the USB optical drive is root:cdrom 0660. The device also
     # carries a uaccess ACL for the seated user, which makes interactive
     # sessions work and non-seated ones fail confusingly.
-    extraGroups = [ "networkmanager" "wheel" "console" "cdrom" ];
+    # docker: lets dlangevi run `docker ps`/`docker logs` on the Wolf
+    # container directly, without sudo, for day-to-day debugging.
+    extraGroups = [ "networkmanager" "wheel" "console" "cdrom" "docker" ];
     packages = with pkgs; [ kdePackages.kate ];
     # console's admin key (programs.ssh "console" match block on console,
     # ~/.ssh/id_admin there), so console can reach suspense for ad-hoc admin.
