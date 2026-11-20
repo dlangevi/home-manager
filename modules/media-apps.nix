@@ -9,6 +9,5 @@
     smplayer
     mpv
     calibre
-    moonlight-qt
   ];
 }

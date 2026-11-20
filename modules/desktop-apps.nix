@@ -41,6 +41,10 @@ in
 
   home.packages = with pkgs; [
     filezilla
+    # Here rather than in media-apps: it is a thin client for suspense's GPU,
+    # so it is useful on exactly the machines that are too weak to run the
+    # heavy media set -- blur included. Every machine takes desktop-apps.
+    moonlight-qt
     kdePackages.spectacle
     kdePackages.kdeconnect-kde
     kdePackages.filelight
