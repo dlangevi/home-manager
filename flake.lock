@@ -1,25 +1,5 @@
 {
   "nodes": {
-    "dl-herd": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1794504941,
-        "narHash": "sha256-cw9hmEwBAYLoggGXCE0Dil4gH/Hg+mNi/JUj+oLIohI=",
-        "ref": "refs/heads/main",
-        "rev": "3610f3b41d335cd819905d9e0bf3f0b70e1f9e78",
-        "revCount": 215,
-        "type": "git",
-        "url": "ssh://git@github.com/dlangevi/dl-herd.git"
-      },
-      "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/dlangevi/dl-herd.git"
-      }
-    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -98,7 +78,6 @@
     },
     "root": {
       "inputs": {
-        "dl-herd": "dl-herd",
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs",
         "nixpkgs-unstable": "nixpkgs-unstable",

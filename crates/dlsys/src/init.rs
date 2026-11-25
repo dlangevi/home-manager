@@ -82,74 +82,6 @@ pub fn ensure_git_identity(runner: &dyn Runner, dir: &Path, prompt: &dyn Prompt)
     Ok(())
 }
 
-/// Is `git@github.com` reachable with whatever key ssh would offer it?
-///
-/// `git ls-remote` over ssh, not a bare `ssh -T`: GitHub's SSH endpoint never
-/// grants a shell, so a *successful* `ssh -T` auth still exits non-zero and
-/// only says so in a greeting on stderr -- which `Runner::capture` does not
-/// even collect (it inherits stderr so nix's progress output keeps reaching
-/// the terminal). `ls-remote` against a real repo exits 0 on success and
-/// non-zero on auth failure, so it fits the existing `ok`-only seam exactly,
-/// and it is a closer proxy for what's actually about to happen: fetching
-/// dl-herd as a flake input.
-fn github_ssh_authenticated(runner: &dyn Runner, dir: &Path) -> bool {
-    runner
-        .capture("git", &["ls-remote", "git@github.com:dlangevi/dl-herd.git"], dir)
-        .map(|o| o.ok)
-        .unwrap_or(false)
-}
-
-/// Make sure this machine can fetch the private flake inputs (dl-herd and any
-/// other `git+ssh://git@github.com/...` input) before `init` tries to.
-///
-/// A brand-new machine has Nix and a repo clone but no SSH identity GitHub
-/// has seen before, so the first `nix build`/`home-manager switch` that
-/// touches those inputs fails with a bare "Permission denied (publickey)" and
-/// no hint about what to do. This generates a key if none exists, prints it,
-/// and waits for the human to add it at github.com/settings/ssh/new before
-/// letting init proceed to the switch that needs it.
-pub fn ensure_github_ssh(runner: &dyn Runner, dir: &Path, prompt: &dyn Prompt) -> Result<()> {
-    if github_ssh_authenticated(runner, dir) {
-        return Ok(());
-    }
-
-    let home = std::env::var("HOME").map_err(|_| anyhow!("HOME is not set"))?;
-    let key_path = format!("{home}/.ssh/id_ed25519");
-    let pub_path = format!("{key_path}.pub");
-
-    if !Path::new(&pub_path).exists() {
-        std::fs::create_dir_all(format!("{home}/.ssh"))
-            .map_err(|e| anyhow!("could not create ~/.ssh: {e}"))?;
-        let label = prompt.ask("No SSH key found. Label for the new key (e.g. your email):")?;
-        if !runner.run(
-            "ssh-keygen",
-            &["-t", "ed25519", "-C", &label, "-f", &key_path, "-N", ""],
-            dir,
-        )? {
-            return Err(anyhow!("ssh-keygen failed"));
-        }
-    }
-
-    let pubkey = std::fs::read_to_string(&pub_path)
-        .map_err(|e| anyhow!("could not read {pub_path}: {e}"))?;
-
-    loop {
-        println!(
-            "\nAdd this key at https://github.com/settings/ssh/new, then continue:\n\n{}\n",
-            pubkey.trim()
-        );
-        if !prompt.confirm("Added it to GitHub?")? {
-            return Err(anyhow!(
-                "GitHub SSH access not confirmed; fetching private flake inputs (dl-herd) will fail"
-            ));
-        }
-        if github_ssh_authenticated(runner, dir) {
-            return Ok(());
-        }
-        println!("Still not authenticating as git@github.com.");
-    }
-}
-
 /// Which features to register, given the catalog and an answer for each.
 ///
 /// `base` is always included and never asked about -- every machine has it.
@@ -358,8 +290,6 @@ pub fn run(runner: &dyn Runner, dir: &Path, host: &str, prompt: &dyn Prompt) -> 
     if !runner.run("git", &["commit", "-m", &msg], dir)? {
         return Err(anyhow!("git commit failed"));
     }
-
-    ensure_github_ssh(runner, dir, prompt)?;
 
     let flake = format!(".#{host}");
     if !switch::hm(runner, dir, &["switch", "--impure", "--flake", &flake])? {

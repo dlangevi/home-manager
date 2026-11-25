@@ -61,6 +61,13 @@ enum Command {
         /// `git pull --ff-only` this checkout before building
         #[arg(long)]
         pull: bool,
+
+        /// Override the detected hostname -- for a machine whose live
+        /// hostname hasn't been renamed to match its registered entry yet
+        /// (e.g. right after `dlsys init` on a fresh NixOS install, before
+        /// the nixos layer that applies networking.hostName has switched)
+        #[arg(long)]
+        host: Option<String>,
     },
 
     /// Run `switch auto` on every managed machine
@@ -108,6 +115,7 @@ fn do_switch(
     target: Target,
     update: bool,
     pull: bool,
+    host: Option<String>,
 ) -> Result<()> {
     repo::require_flake(dir)?;
 
@@ -126,7 +134,10 @@ fn do_switch(
         }
     }
 
-    let host = hostname(runner, dir)?;
+    let host = match host {
+        Some(h) => h,
+        None => hostname(runner, dir)?,
+    };
     let machines = machines::load(runner, dir)?;
     if !machines.contains_key(&host) {
         return Err(anyhow!("{host} is not registered. Run 'dlsys init' first."));
@@ -213,7 +224,8 @@ fn main() -> Result<()> {
             target,
             update,
             pull,
-        } => do_switch(&runner, &dir, target, update, pull),
+            host,
+        } => do_switch(&runner, &dir, target, update, pull, host),
         Command::Rollout { order, update } => {
             let host = hostname(&runner, &dir)?;
             let dir2 = dir.clone();
@@ -225,7 +237,7 @@ fn main() -> Result<()> {
                 &host,
                 &init::TtyPrompt,
                 // This host switches in-process rather than over ssh.
-                &|| do_switch(&RealRunner, &dir2, Target::Auto, false, false),
+                &|| do_switch(&RealRunner, &dir2, Target::Auto, false, false, None),
             )
         }
     }
