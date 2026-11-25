@@ -238,6 +238,10 @@ in
       layer = "top";
       position = "top";
       height = 24;
+      # Workspace indicators are opt-in here, unlike swaybar/i3bar where
+      # they're just always part of the protocol.
+      modules-left = [ "sway/workspaces" "sway/mode" ];
+      "sway/workspaces".disable-scroll = false;
       modules-right = [
         "battery"
         "network"
