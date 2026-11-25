@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, pkgs-unstable, ... }:
 
 {
   imports = [
@@ -42,47 +42,92 @@
     autoStart = true;
     openFirewall = true;
 
-    # capSysAdmin must stay false on this host, and that is load-bearing
-    # rather than a tidy-up. It exists so the KMS/portal capture backends can
-    # grab the screen, which only matters under Wayland -- this host pins
-    # plasmax11 and sddm.wayland.enable = false, so capture goes through X11,
-    # which needs no capability at all.
+    # Pinned to nixpkgs-unstable rather than the nixos-26.05 pin (2026.516 vs
+    # 2026.914 as of this writing) -- Sunshine ships stable releases far more
+    # often than this channel branches, so the channel pin runs stale for
+    # months at a time otherwise.
     #
-    # Turning it on actively breaks NVENC. The module implements it with a
-    # security.wrapper carrying cap_sys_admin+p, and any file capability makes
-    # the process AT_SECURE, which NVIDIA's libcuda refuses to initialise in:
+    # Needs libcuda.so.1 (at the driver's `/run/opengl-driver/lib`, outside
+    # the Nix store) for NVENC, which it dlopens at runtime rather than
+    # linking -- so nixpkgs' normal dependency-closure RPATH never includes
+    # it, and without this override NVENC silently falls back to Vulkan
+    # Video encode (visible strobing artifacts on this NVIDIA/KWin combo).
+    # Confirmed live 2026-11-09 via `journalctl --user -u sunshine`:
+    # "Attempting to use NVENC without CUDA support" -> "[CUDA] Cannot load
+    # libcuda.so.1" -> "Failed to create a CUDA device: Operation not
+    # permitted".
     #
-    #   Error: Failed to create a CUDA device: Operation not permitted
-    #
-    # Sunshine then walks nvenc -> vulkan -> vaapi -> software, fails all four
-    # and exits with "Unable to find display or encoder during startup". The
-    # error names neither CAP_SYS_ADMIN nor the GPU, so it reads like a driver
-    # fault rather than a capability one.
+    # `autoAddDriverRunpath` is nixpkgs' own hook for exactly this case
+    # (dlopen'd driver libs); the package already uses it when built with
+    # `cudaSupport`, just not in the nixpkgs binary cache's default build.
+    # A hand-rolled `patchelf --add-rpath` in `postFixup` does NOT work here:
+    # `autoPatchelfHook` (already in this package's nativeBuildInputs) runs
+    # after `postFixup` and recomputes the RPATH from the binary's actual
+    # linked (DT_NEEDED) dependencies, silently dropping any manual addition
+    # for a dlopen'd lib it doesn't know about -- confirmed via `patchelf
+    # --print-rpath` on an overridden build. `autoAddDriverRunpath` is built
+    # to survive that pass; a manual patchelf call is not.
+    package = pkgs-unstable.sunshine.overrideAttrs (old: {
+      nativeBuildInputs = old.nativeBuildInputs ++ [ pkgs-unstable.autoAddDriverRunpath ];
+    });
+
+    # Back to false (2026-11-11): the Wayland cutover below was reverted --
+    # XWayland games under Plasma Wayland hit a known, widely-reported
+    # NVIDIA/KWin flicker/tearing-artifact class (short horizontal white
+    # lines; see docs/superpowers/specs/2026-11-09-wayland-sunshine-capture-
+    # design.md for the attempt and its findings) that outweighed the
+    # original X11 capture-race problem this migration was trying to fix.
+    # true was only ever needed for Wayland's KMS/portal capture backend; it
+    # buys nothing under X11 capture, and false keeps the simpler wrapper-
+    # free unit. The CUDA/AT_SECURE conflict this used to reintroduce is
+    # fixed unconditionally via the RPATH override above now, so it is not a
+    # reason to leave this true either way.
     capSysAdmin = false;
     settings = {
       # Restrict capture to the 1440p monitor; the second display confuses
       # single-screen Moonlight clients.
       #
-      # This is an INDEX, not a connector name. Sunshine's X11 backend parses
-      # output_name as an integer; a name like "DP-2" parses to garbage and
-      # produces the misleading
+      # Connector name, not the numeric index this used to be set to. The
+      # numeric index ("5", matching the "(id: 5)" XRandR prints next to
+      # DP-4 in `journalctl --user -u sunshine | grep "Detected display"`)
+      # builds and starts fine but silently streams DP-0 instead -- Sunshine's
+      # logged enumeration order and its actual output_name index lookup are
+      # two different code paths that only happen to agree sometimes
+      # (upstream: LizardByte/Sunshine#221).
       #
-      #   Could not stream display number [23172], there are only [7] displays
+      # The earlier attempt at a connector-name value ("DP-2") failed with
+      # "Could not stream display number [23172], there are only [7]
+      # displays" -- but that was the wrong name (DP-2 is the old GPU's KMS
+      # name, surviving stale into the 2070 SUPER's X11 driver naming, where
+      # it's now a disconnected output) on a Sunshine build that predates
+      # upstream PR #5423 (closed 2026-07-22), which is what made connector
+      # names a real, index-independent alternative to begin with. The
+      # running build here (2026.914.233613) postdates that fix.
       #
-      # 7 is every XRandR output including disconnected ones, so the index
-      # space covers dark outputs too and is positional.
+      # "DP-4" above is the X11 xrandr name for the 1440p panel. Plasma
+      # Wayland switches Sunshine's capture backend from X11 to KMS, and KMS
+      # enumerates the same physical monitors under different connector
+      # names entirely -- confirmed live while briefly testing Wayland as
+      # the logged-in session (2026-11-09): with output_name left at "DP-4",
+      # Sunshine logged "Couldn't map 'DP-4' to a monitor index. Falling
+      # back to first monitor in list", which silently streamed the wrong
+      # (1080p) panel instead of erroring. Its own "Start of KMS monitor
+      # list" log named the 1440p panel (AUS VG32VQ1B) "DP-3" there.
       #
-      # Beware two different namespaces for the same hardware: the kernel/KMS
-      # side calls these DP-1/DP-2/DP-3/HDMI-A-1, while the nvidia X driver
-      # calls them DP-0..DP-5/HDMI-0. "DP-2" was the old card's KMS name and
-      # survived the swap to the 2070 SUPER; under X11 DP-2 is now a
-      # disconnected output, and the 1440p panel is DP-4 at index 5.
-      #
-      # Re-derive after any GPU or cable change -- the index moves. Sunshine
-      # prints the mapping at startup:
-      #   journalctl --user -u sunshine | grep "Detected display"
-      #   -> Detected display: DP-4 (id: 5)DP-4 connected: true
-      output_name = "5";
+      # Sunshine picks its capture backend from the session actually logged
+      # in, not from this module's defaultSession setting below -- so a
+      # manual Wayland login while plasmax11 stays the configured default
+      # would still need "DP-3" here, and this conditional would guess wrong
+      # for exactly that case. It is only meant to track the common case
+      # (whichever session is actually the default), not override it.
+      # Re-derive either name after any GPU/cable change via
+      # `journalctl --user -u sunshine | grep -A2 "KMS monitor list"` (KMS)
+      # or `| grep "Detected display"` (X11) -- the two backends' naming
+      # don't relate to each other at all.
+      output_name =
+        if config.services.displayManager.defaultSession == "plasmax11"
+        then "DP-4"
+        else "DP-3";
 
       # `resolutions` and `fps` used to be set here. They are not Sunshine
       # options and never were on this version -- it logs
@@ -152,17 +197,97 @@
     };
   };
 
-  # Required by capSysAdmin = false above, and the two must move together.
-  # With the wrapper gone the unit execs the bare ELF from the store, and the
-  # module sets no library path, so libcuda.so.1 is simply not found:
+  # Wolf (games-on-whales): lets the "console" device log into suspense over
+  # Moonlight into an isolated game-picker session instead of mirroring this
+  # desktop, with per-kid save-game isolation. Wolf ships only as a
+  # container image, so Docker is required regardless of what the apps
+  # inside it turn out to be; nvidia-container-toolkit gives those
+  # containers CDI-based access to the same card Sunshine already drives.
   #
-  #   Error: [CUDA @ ...] Cannot load libcuda.so.1
+  # Deliberately NOT declared here: Wolf's own config.toml/apps.toml,
+  # per-kid profiles, and the Hookshot save-swap scripts. All of that lives
+  # under ~/auto/gaming (see PROJECT.md there), which is not a GitHub repo,
+  # because it names the kids and the game library. This block only wires
+  # up the generic container/GPU infrastructure and the ports.
+  virtualisation.docker.enable = true;
+  # Wolf's own container gets GPU access fine via CDI (the
+  # --device=nvidia.com/gpu=all below), but Wolf itself talks to the host's
+  # real Docker daemon over the mounted socket to spawn each game's child
+  # container, and asks Docker for the legacy "--runtime=nvidia" -- a name
+  # CDI alone never registers. enableNvidia registers that runtime in
+  # Docker's daemon settings. Without it, Docker logs "unknown or invalid
+  # runtime name: nvidia" for every app launch and the stream dies right
+  # after it starts.
   #
-  # That is the same "Encoder [nvenc] failed" symptom as the capability bug
-  # with an unrelated cause, so dropping capSysAdmin without this line looks
-  # like the fix did nothing.
-  systemd.user.services.sunshine.environment.LD_LIBRARY_PATH =
-    "${pkgs.addDriverRunpath.driverLink}/lib";
+  # Upstream flags this option deprecated in favour of
+  # hardware.nvidia-container-toolkit.enable alone -- but read the module
+  # source (nixos/modules/services/hardware/nvidia-container-toolkit):
+  # that option on its own only wires up the newer CDI path (nvidia.com/gpu=
+  # device requests). The legacy runtimes.nvidia registration in Docker's
+  # daemon.settings, which is what this mkIf block alone adds, only fires
+  # off this option. Don't "clean up" the warning by dropping it.
+  virtualisation.docker.enableNvidia = true;
+
+  # Requires the nvidia driver, already selected via
+  # services.xserver.videoDrivers above.
+  hardware.nvidia-container-toolkit.enable = true;
+
+  virtualisation.oci-containers.containers.wolf = {
+    image = "ghcr.io/games-on-whales/wolf:stable";
+    autoStart = true;
+    # Without these, Wolf tries to resolve a MAC for whatever IP it picks for
+    # its internal advertisement step, lands on tailscale0's
+    # 100.83.202.76 -- a virtual interface with no MAC -- and logs "Unable to
+    # get mac address" every ~3s forever. Same enp5s0 IP/MAC already pinned
+    # for WOL in modules/wake-suspense.nix.
+    environment = {
+      WOLF_INTERNAL_IP = "10.0.70.116";
+      WOLF_INTERNAL_MAC = "70:85:c2:54:95:95";
+    };
+    volumes = [
+      # Wolf's state dir (config.toml, apps.toml, per-profile save data).
+      # Lives under auto/gaming, not in this repo or in /etc -- see the
+      # comment above.
+      "/home/dlangevi/auto/gaming/wolf-state:/etc/wolf:rw"
+      # Wolf spawns its own per-app Docker containers (Wolf UI, any
+      # Docker-runner apps), so it needs to talk to the host's Docker
+      # daemon itself -- this is upstream's documented design, not an
+      # accidental privilege escalation.
+      "/var/run/docker.sock:/var/run/docker.sock:rw"
+      # Docker-type apps (currently just Wolf UI) talk back to Wolf over
+      # /var/run/wolf/wolf.sock, which they mount from the *host* path of
+      # the same name. Without this bind mount, Wolf writes that socket
+      # inside its own container's private /var/run instead, the sibling
+      # container's mount source never exists on the real host, and Wolf UI
+      # fails immediately with "[CURL] Could not connect to server".
+      "/var/run/wolf:/var/run/wolf:rw"
+      "/dev/:/dev/:rw"
+      "/run/udev:/run/udev:rw"
+    ];
+    extraOptions = [
+      "--network=host"
+      # NVIDIA_VISIBLE_DEVICES/NVIDIA_DRIVER_CAPABILITIES (the nvidia-docker1
+      # mechanism) only take effect if the container runtime itself is
+      # swapped to nvidia-container-runtime -- which is what
+      # virtualisation.docker.enableNvidia does, but the oci-containers
+      # backend here defaulted to podman regardless of
+      # virtualisation.docker.enable, and this is on the newer CDI path
+      # (hardware.nvidia-container-toolkit.enable) anyway. Request the GPU
+      # as a CDI device instead -- confirmed live against the generated
+      # spec at /var/run/cdi/nvidia-container-toolkit.json, which names its
+      # one GPU device "nvidia.com/gpu=all". Without this, Wolf starts but
+      # its GStreamer pipeline logs "Could not open library libcuda.so.1"
+      # and has no hardware encode.
+      "--device=nvidia.com/gpu=all"
+      "--device=/dev/dri/"
+      # Virtual controller emulation: uinput for Xbox-style pads, uhid for
+      # DualSense. Same two devices Sunshine's gamepad emulation above
+      # already relies on.
+      "--device=/dev/uinput"
+      "--device=/dev/uhid"
+      "--device-cgroup-rule=c 13:* rmw"
+    ];
+  };
 
   # Resilio Sync removed. It was the single loudest thing on this machine:
   # rslsync runs with its debug log mask at FFFFFFFF and wrote 11307 of the
@@ -180,12 +305,14 @@
     allowedTCPPorts = [
       2234  # nicotine+ (soulseek listening port; match it in Preferences -> Network)
       42420 # vintagestory
+      47984 # Wolf (GameStream/Moonlight) HTTPS
+      47989 # Wolf (GameStream/Moonlight) HTTP
+      48010 # Wolf RTSP setup
     ];
-    allowedTCPPortRanges = [
-      { from = 1714; to = 1764; } # KDE Connect
-    ];
-    allowedUDPPortRanges = [
-      { from = 1714; to = 1764; } # KDE Connect
+    allowedUDPPorts = [
+      47999 # Wolf control
+      48100 # Wolf video
+      48200 # Wolf audio
     ];
   };
 
@@ -291,15 +418,43 @@
 
     nvidiaSettings = true;
 
-    # No `package` pin. 580 was the last branch carrying Maxwell/Pascal/Volta
-    # and had to be pinned for the GTX 1060; Turing is unaffected by that drop
-    # and rides the current branch, so the module default (595.71.05 in
-    # nixpkgs 26.05) is correct here.
+    # Pinned to 620.70.06 (2026-11-13): testing NVIDIA bug 7014466, a Turing
+    # shader-compiler SIGILL ("Unsupported: extractelement <8 x i4>") that
+    # crashes Cyberpunk 2077 patch 3.0.88 at startup -- see
+    # github.com/HansKristian-Work/vkd3d-proton/issues/3405. NVIDIA confirmed
+    # a driver-side fix on 2026-11-02; 620.70.06 shipped two days later but
+    # inclusion is unconfirmed. nixpkgs here (locked ~2026-05) only packages
+    # 595.71.05, so this is built directly via mkDriver rather than from the
+    # nixpkgs nvidiaPackages set. Revert to no `package` pin (ride the module
+    # default) if this doesn't fix the crash, to avoid carrying a stale
+    # out-of-band pin once nixpkgs itself catches up.
+    package = config.boot.kernelPackages.nvidiaPackages.mkDriver {
+      version = "620.70.06";
+      sha256_64bit = "sha256-KRGOOr0IwHVZvMo9nHYjjQOUkK8DYqLlvPy+cgSv1LE=";
+      openSha256 = lib.fakeHash;
+      settingsSha256 = "sha256-CFBRmXFJ9eAf5BRlHMBolahz1Pshr9giI7zcZC29oZ8=";
+      persistencedSha256 = lib.fakeHash;
+    };
   };
 
-  # NVIDIA on Wayland is flaky — stay on X11
+  # Reverted back to plasmax11 (2026-11-11): the Wayland cutover (see
+  # docs/superpowers/specs/2026-11-09-wayland-sunshine-capture-design.md and
+  # its plan) was briefly completed and tested end to end over a live
+  # Moonlight stream -- it fixed the original X11 capture-race problem, but
+  # surfaced a worse one in trade: streaming an XWayland game (Steam/Proton)
+  # under Plasma Wayland produced short horizontal white-line artifacting, a
+  # known and still-unresolved class of NVIDIA/KWin/XWayland bug (reports
+  # span NVIDIA driver forums and KDE bugzilla, not specific to this host --
+  # see that spec for the links gathered 2026-11-11) rather than anything
+  # fixable here. Wayland stays selectable at the SDDM login screen (below)
+  # for whenever upstream moves on this, but is no longer the default.
+  #
+  # This also flips the `output_name` conditional above back to "DP-4" --
+  # that conditional keys off this same defaultSession value, which is
+  # exactly why it has to move back in lockstep rather than being left at
+  # "plasma" while logging into plasmax11 by hand.
   services.displayManager.defaultSession = "plasmax11";
-  services.displayManager.sddm.wayland.enable = false;
+  services.displayManager.sddm.wayland.enable = true;
 
   # Personal dev machine: user-friendly Plasma day to day, with Sway offered
   # as a selectable login-screen session for when fast/low-overhead is worth
@@ -344,8 +499,16 @@
     # cdrom: the USB optical drive is root:cdrom 0660. The device also
     # carries a uaccess ACL for the seated user, which makes interactive
     # sessions work and non-seated ones fail confusingly.
-    extraGroups = [ "networkmanager" "wheel" "console" "cdrom" ];
+    # docker: lets dlangevi run `docker ps`/`docker logs` on the Wolf
+    # container directly, without sudo, for day-to-day debugging.
+    extraGroups = [ "networkmanager" "wheel" "console" "cdrom" "docker" ];
     packages = with pkgs; [ kdePackages.kate ];
+    # console's admin key (programs.ssh "console" match block on console,
+    # ~/.ssh/id_admin there), so console can reach suspense for ad-hoc admin.
+    # Same bytes as the console@dance-admin entry in nixos/hosts/dance.nix.
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOW8W08WgSljSKmZKJjkDd8HGQ9a2K+hMjrfr3BCYmtv console@dance-admin"
+    ];
   };
 
   # Run non-Nix binaries
@@ -487,29 +650,15 @@
     };
   };
 
-  # Scoped to source rather than `openFirewall = true`, which would publish the
-  # API to the whole LAN unauthenticated -- ollama has no auth of its own. Same
-  # three subnets, for the same reason, as the navidrome/jellyfin rules in
-  # ../modules/media-audio.nix.
-  #
-  # 192.168.2.0/24 is the one that actually carries the phone: UniFi Teleport
-  # hands the handset a /32 on tun0 and it reaches this box from there, not
-  # from the tailnet. Omitting it fails in a way that looks like a routing
-  # problem rather than a firewall one -- ICMP is allowed by default, so the
-  # host pings fine and only the TCP connect times out.
-  #
-  # Two ports now: 11434 is ollama and 1234 is sd-server (../modules/
-  # stable-diffusion.nix). sd-server has no auth either, and its default web UI
-  # is served on that same port, so it gets exactly the same three subnets
-  # rather than anything looser.
-  networking.firewall.extraCommands =
-    let
-      subnets = [ "100.64.0.0/10" "192.168.2.0/24" "10.0.70.0/24" ];
-      ports = [ 11434 1234 ];
-      allow = port: subnet:
-        "iptables -A nixos-fw -p tcp -s ${subnet} --dport ${toString port} -j nixos-fw-accept";
-    in
-    lib.concatMapStringsSep "\n" (port: lib.concatMapStringsSep "\n" (allow port) subnets) ports;
+  # Deliberately unreachable from the network. ollama (11434) and sd-server
+  # (../modules/stable-diffusion.nix, 1234) both have no auth of their own,
+  # and were previously opened to the LAN/teleport/tailnet subnets for the
+  # phone chat app -- removed as part of a security review (2026-11-18) that
+  # flagged unauthenticated internal APIs reachable from a guest-adjacent
+  # subnet. Both still bind 0.0.0.0 and run locally; nothing routes to them
+  # from off-box any more. Re-add scoped `networking.firewall.extraCommands`
+  # rules here (see git history) if remote access to either is wanted again,
+  # ideally with auth in front of it this time.
 
   environment.systemPackages = with pkgs; [
     # This box has two EFI System Partitions -- the live 1000M one and the

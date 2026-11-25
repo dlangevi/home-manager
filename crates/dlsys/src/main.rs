@@ -14,6 +14,7 @@ mod switch;
 
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
+use init::Prompt;
 use runner::{RealRunner, Runner};
 use std::path::Path;
 
@@ -60,6 +61,13 @@ enum Command {
         /// `git pull --ff-only` this checkout before building
         #[arg(long)]
         pull: bool,
+
+        /// Override the detected hostname -- for a machine whose live
+        /// hostname hasn't been renamed to match its registered entry yet
+        /// (e.g. right after `dlsys init` on a fresh NixOS install, before
+        /// the nixos layer that applies networking.hostName has switched)
+        #[arg(long)]
+        host: Option<String>,
     },
 
     /// Run `switch auto` on every managed machine
@@ -107,6 +115,7 @@ fn do_switch(
     target: Target,
     update: bool,
     pull: bool,
+    host: Option<String>,
 ) -> Result<()> {
     repo::require_flake(dir)?;
 
@@ -125,7 +134,10 @@ fn do_switch(
         }
     }
 
-    let host = hostname(runner, dir)?;
+    let host = match host {
+        Some(h) => h,
+        None => hostname(runner, dir)?,
+    };
     let machines = machines::load(runner, dir)?;
     if !machines.contains_key(&host) {
         return Err(anyhow!("{host} is not registered. Run 'dlsys init' first."));
@@ -186,14 +198,34 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Init => {
-            let host = hostname(&runner, &dir)?;
+            // Asked rather than auto-detected: a fresh install's live
+            // hostname is often whatever the installer defaulted to (e.g.
+            // "nixos"), not the name this machine should actually register
+            // under -- and that name is also what ends up in
+            // networking.hostName (see init::ensure_nixos_host_file), so it
+            // needs to be a deliberate choice, not an accident of install
+            // media. Detected hostname is offered as the default so a
+            // machine that already has the right one doesn't make you
+            // retype it.
+            let detected = hostname(&runner, &dir).ok();
+            let question = match &detected {
+                Some(d) => format!("Hostname for this machine [{d}]:"),
+                None => "Hostname for this machine:".to_string(),
+            };
+            let answer = init::TtyPrompt.ask(&question)?;
+            let host = if answer.trim().is_empty() {
+                detected.ok_or_else(|| anyhow!("no hostname entered, and none could be detected"))?
+            } else {
+                answer.trim().to_string()
+            };
             init::run(&runner, &dir, &host, &init::TtyPrompt)
         }
         Command::Switch {
             target,
             update,
             pull,
-        } => do_switch(&runner, &dir, target, update, pull),
+            host,
+        } => do_switch(&runner, &dir, target, update, pull, host),
         Command::Rollout { order, update } => {
             let host = hostname(&runner, &dir)?;
             let dir2 = dir.clone();
@@ -205,7 +237,7 @@ fn main() -> Result<()> {
                 &host,
                 &init::TtyPrompt,
                 // This host switches in-process rather than over ssh.
-                &|| do_switch(&RealRunner, &dir2, Target::Auto, false, false),
+                &|| do_switch(&RealRunner, &dir2, Target::Auto, false, false, None),
             )
         }
     }

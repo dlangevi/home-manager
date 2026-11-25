@@ -15,10 +15,25 @@
 # while (first-ever nix build), so this waits for the service rather than
 # requiring it to already be up -- the two don't need careful ordering by the
 # caller, just "switch started, then this."
+#
+# Run ./bootstrap-tailscale.sh first. modules/syncthing.nix's peers are only
+# addressed by tailnet (MagicDNS) name (`tcp://suspense:22000`, etc, since
+# syncthing's own discovery servers are deliberately off), so without
+# Tailscale up this script's "waiting for a peer to connect" step below would
+# hang forever with no indication why -- the check right after this comment
+# fails fast with that explanation instead.
 set -euo pipefail
 
 if ! command -v curl >/dev/null 2>&1; then
   exec nix shell nixpkgs#curl --command "$0" "$@"
+fi
+
+if command -v tailscale >/dev/null 2>&1; then
+  if [[ "$(sudo tailscale status --json 2>/dev/null | jq -r .BackendState)" != "Running" ]]; then
+    echo "Tailscale isn't logged in yet. Run ./bootstrap-tailscale.sh first --" >&2
+    echo "syncthing's peers are only reachable at their tailnet addresses." >&2
+    exit 1
+  fi
 fi
 
 echo "Waiting for syncthing.service (started by the 'base' feature)..."
@@ -52,7 +67,10 @@ until [[ -f "$config" ]]; do
 done
 
 api_key=$(grep -oP '(?<=<apikey>)[^<]+' "$config")
-gui_addr=$(grep -oP '(?<=<address>)[^<]+' "$config" | grep -v '^dynamic$' | head -1)
+# Scoped to the <gui> block specifically: peer <device> blocks also carry
+# <address> tags (e.g. tcp://suspense:22000), and a plain file-wide grep for
+# the first non-"dynamic" one picks up a peer's address instead of the GUI's.
+gui_addr=$(sed -n '/<gui /,/<\/gui>/p' "$config" | grep -oP '(?<=<address>)[^<]+')
 api() { curl -sf -H "X-API-Key: $api_key" "http://${gui_addr}$1"; }
 
 device_id=$(api /rest/system/status | jq -r .myID)

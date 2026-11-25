@@ -3,6 +3,12 @@
   # (messaging is worth the Electron weight) but not media-apps (OBS,
   # Kdenlive, GIMP are occasional-use and heavy even idle).
   "blur"     = [ "base" "desktop-apps" "chat-apps" "herd" "sway" ];
+  # chonk was registered while `desktop-apps` was still the monolith that
+  # also carried chat and media apps. That feature has since been split
+  # three ways, and this list is its registration taken literally, so chonk
+  # currently gets neither chat-apps nor media-apps -- add them if it turns
+  # out to want them.
+  "chonk"    = [ "base" "desktop-apps" "herd" ];
   "console"  = [ "base" "desktop-apps" "chat-apps" "media-apps" "mpd-client" "soulseek" "herd" "wake-suspense" ];
   "dance"    = [ "base" "desktop-apps" "chat-apps" "media-apps" "streaming" "music-server" "snapclient" "mpd-client" "herd" ];
   # slskd (nixos/modules/slskd.nix) is the acquisition backend for

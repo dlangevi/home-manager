@@ -213,6 +213,42 @@ pub fn update_inputs(runner: &dyn Runner, dir: &Path) -> Result<()> {
     if !runner.run("nix", &args, dir)? {
         return Err(anyhow!("nix flake update failed"));
     }
+    update_dl_herd_pin(runner, dir)?;
+    Ok(())
+}
+
+/// Bump dl-herd.lock.json's pinned rev to the tip of dl-herd's main branch.
+///
+/// dl-herd stopped being a flake `input` (see flake.nix's `herdSrc`) so that a
+/// host which never selects "herd" never has to fetch it at all; that move
+/// also took it out of `nix flake update`'s reach, since that only walks
+/// `flake.nix`'s declared inputs. This is its replacement -- same trigger
+/// (`dlsys switch --update`), same "every pinned input moves together across
+/// a rollout" property, just a separate fetch since dl-herd is a plain file
+/// now, not something `nix flake update` or `--apply` can see.
+fn update_dl_herd_pin(runner: &dyn Runner, dir: &Path) -> Result<()> {
+    let out = runner.capture(
+        "git",
+        &[
+            "ls-remote",
+            "git@github.com:dlangevi/dl-herd.git",
+            "refs/heads/main",
+        ],
+        dir,
+    )?;
+    if !out.ok {
+        return Err(anyhow!("could not read dl-herd's latest rev (git ls-remote failed)"));
+    }
+    let rev = out
+        .stdout
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| anyhow!("git ls-remote returned no rev for dl-herd"))?;
+    let contents = serde_json::to_string_pretty(&serde_json::json!({ "rev": rev }))
+        .map_err(|e| anyhow!("could not serialize dl-herd.lock.json: {e}"))?
+        + "\n";
+    std::fs::write(dir.join("dl-herd.lock.json"), contents)
+        .map_err(|e| anyhow!("could not write dl-herd.lock.json: {e}"))?;
     Ok(())
 }
 
@@ -322,13 +358,40 @@ mod tests {
 
     #[test]
     fn update_inputs_excludes_nixpkgs_ollama() {
-        let f = FakeRunner::new(&[(
-            "--apply",
-            Output::out("nixpkgs home-manager dl-herd plasma-manager"),
-        )]);
-        update_inputs(&f, &PathBuf::from("/repo")).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let f = FakeRunner::new(&[
+            ("--apply", Output::out("nixpkgs home-manager plasma-manager")),
+            ("ls-remote", Output::out("abc123\trefs/heads/main")),
+        ]);
+        update_inputs(&f, dir.path()).unwrap();
         let update = f.calls().into_iter().find(|c| c.contains("flake update")).unwrap();
         assert!(!update.contains("nixpkgs-ollama"), "{update}");
-        assert!(update.contains("dl-herd"), "{update}");
+        assert!(update.contains("home-manager"), "{update}");
+    }
+
+    /// dl-herd left `flake.nix`'s `inputs` (see that file's `herdSrc`
+    /// comment), so `nix flake update` no longer touches its pin -- this is
+    /// its replacement path, triggered by the same `--update` flag.
+    #[test]
+    fn update_inputs_bumps_the_dl_herd_pin() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = FakeRunner::new(&[
+            ("--apply", Output::out("nixpkgs")),
+            ("ls-remote", Output::out("abc123def456\trefs/heads/main")),
+        ]);
+        update_inputs(&f, dir.path()).unwrap();
+        let written = std::fs::read_to_string(dir.path().join("dl-herd.lock.json")).unwrap();
+        assert!(written.contains("abc123def456"), "{written}");
+    }
+
+    #[test]
+    fn update_inputs_fails_loudly_when_dl_herd_is_unreachable() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = FakeRunner::new(&[
+            ("--apply", Output::out("nixpkgs")),
+            ("ls-remote", Output::fail()),
+        ]);
+        let err = update_inputs(&f, dir.path()).unwrap_err().to_string();
+        assert!(err.contains("dl-herd"), "{err}");
     }
 }

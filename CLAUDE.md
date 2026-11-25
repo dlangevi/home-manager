@@ -89,10 +89,18 @@ the git tree, so an untracked hardware file silently falls back to
 `/etc/nixos`.
 
 `nixos/hosts/<name>.nix` has no such fallback -- it must exist before
-`nixosConfigurations.<name>` evaluates at all. `dlsys init` seeds it
-automatically on a NixOS machine with just `networking.hostName` and
-`system.stateVersion` (scraped from `/etc/nixos/configuration.nix`); grow it
-by hand from there, the same way console/dance/suspense did.
+`nixosConfigurations.<name>` evaluates at all. `dlsys init` seeds it on a
+NixOS machine by asking for the hostname to use (the installer's own live
+hostname is often a placeholder, so it's never auto-detected for this) and
+writing a file with just that, `system.stateVersion`, and the full `users.*`
+block -- all scraped out of `/etc/nixos/configuration.nix`. The `users.*`
+block specifically is load-bearing: it's where the installer puts the
+account's groups/shell/password with no other home in this repo at all, and
+an earlier version that dropped it left a real machine's login effectively
+locked out after a reboot. Everything else from the generated file (xserver,
+bootloader, locale, etc.) is left out, on the assumption that it either
+duplicates `nixos/common.nix` or is inert boilerplate; grow the file by hand
+from there, the same way console/dance/suspense were.
 
 Put a program in **NixOS** (`nixos/common.nix` or `nixos/hosts/<name>.nix`)
 if any of:

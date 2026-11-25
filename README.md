@@ -51,11 +51,16 @@ nix --version
 
 ### 3. Clone this repo
 
+HTTPS, not SSH: a brand-new machine has no GitHub SSH key yet (that key lives
+in the synced identity store — see step 4.5 below — so it can't exist before
+Syncthing has pulled it down), and the repo is public, so an anonymous HTTPS
+clone needs no credentials at all.
+
 ```bash
 # Back up any default config home-manager already generated
 mv ~/.config/home-manager ~/.config/home-manager.default 2>/dev/null || true
 
-git clone git@github.com:dlangevi/home-manager.git ~/.config/home-manager
+git clone https://github.com/dlangevi/home-manager.git ~/.config/home-manager
 cd ~/.config/home-manager
 ```
 
@@ -82,9 +87,38 @@ from a commit that breaks dlsys.
 - Commit the registration.
 - Run the first `home-manager switch`.
 
-After it finishes, push the registration commit:
+After it finishes, this machine has home-manager and the `base` feature
+(including Syncthing) running, but nothing that needs GitHub auth has
+happened yet — including pushing the registration commit itself.
+
+### 4.5. Get this machine's real identity
+
+Only relevant once this machine is meant to join the existing mesh (console,
+dance, suspense) — skip this if you're cloning as a reference/template (see
+the `base`-only note above).
+
+Syncthing's peers (suspense, dance, console) are only reachable at their
+Tailscale (MagicDNS) addresses, and the private key material for SSH
+(`~/.ssh/id_github`, `~/.ssh/id_admin` — see modules/base.nix) is
+deliberately never provisioned by this repo. Both arrive this way instead:
 
 ```bash
+./bootstrap-tailscale.sh    # logs this machine into the tailnet
+./bootstrap-syncthing.sh    # pairs with a peer, pulls down the "Sync" folder
+```
+
+`bootstrap-tailscale.sh` prints a login URL the first time — open it in a
+browser and approve the device. `bootstrap-syncthing.sh` prints this
+machine's Syncthing device ID and waits for you to approve it from an
+already-paired machine's web UI (instructions in its own output).
+
+Once paired, pull `id_github` and `id_admin` out of your synced identity
+store (KeePassXC) into `~/.ssh/`, matching the paths `modules/base.nix`
+expects, then point this repo's remote at SSH and push the registration
+commit:
+
+```bash
+git remote set-url origin git@github.com:dlangevi/home-manager.git
 git push
 ```
 

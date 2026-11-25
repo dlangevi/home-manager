@@ -82,74 +82,6 @@ pub fn ensure_git_identity(runner: &dyn Runner, dir: &Path, prompt: &dyn Prompt)
     Ok(())
 }
 
-/// Is `git@github.com` reachable with whatever key ssh would offer it?
-///
-/// `git ls-remote` over ssh, not a bare `ssh -T`: GitHub's SSH endpoint never
-/// grants a shell, so a *successful* `ssh -T` auth still exits non-zero and
-/// only says so in a greeting on stderr -- which `Runner::capture` does not
-/// even collect (it inherits stderr so nix's progress output keeps reaching
-/// the terminal). `ls-remote` against a real repo exits 0 on success and
-/// non-zero on auth failure, so it fits the existing `ok`-only seam exactly,
-/// and it is a closer proxy for what's actually about to happen: fetching
-/// dl-herd as a flake input.
-fn github_ssh_authenticated(runner: &dyn Runner, dir: &Path) -> bool {
-    runner
-        .capture("git", &["ls-remote", "git@github.com:dlangevi/dl-herd.git"], dir)
-        .map(|o| o.ok)
-        .unwrap_or(false)
-}
-
-/// Make sure this machine can fetch the private flake inputs (dl-herd and any
-/// other `git+ssh://git@github.com/...` input) before `init` tries to.
-///
-/// A brand-new machine has Nix and a repo clone but no SSH identity GitHub
-/// has seen before, so the first `nix build`/`home-manager switch` that
-/// touches those inputs fails with a bare "Permission denied (publickey)" and
-/// no hint about what to do. This generates a key if none exists, prints it,
-/// and waits for the human to add it at github.com/settings/ssh/new before
-/// letting init proceed to the switch that needs it.
-pub fn ensure_github_ssh(runner: &dyn Runner, dir: &Path, prompt: &dyn Prompt) -> Result<()> {
-    if github_ssh_authenticated(runner, dir) {
-        return Ok(());
-    }
-
-    let home = std::env::var("HOME").map_err(|_| anyhow!("HOME is not set"))?;
-    let key_path = format!("{home}/.ssh/id_ed25519");
-    let pub_path = format!("{key_path}.pub");
-
-    if !Path::new(&pub_path).exists() {
-        std::fs::create_dir_all(format!("{home}/.ssh"))
-            .map_err(|e| anyhow!("could not create ~/.ssh: {e}"))?;
-        let label = prompt.ask("No SSH key found. Label for the new key (e.g. your email):")?;
-        if !runner.run(
-            "ssh-keygen",
-            &["-t", "ed25519", "-C", &label, "-f", &key_path, "-N", ""],
-            dir,
-        )? {
-            return Err(anyhow!("ssh-keygen failed"));
-        }
-    }
-
-    let pubkey = std::fs::read_to_string(&pub_path)
-        .map_err(|e| anyhow!("could not read {pub_path}: {e}"))?;
-
-    loop {
-        println!(
-            "\nAdd this key at https://github.com/settings/ssh/new, then continue:\n\n{}\n",
-            pubkey.trim()
-        );
-        if !prompt.confirm("Added it to GitHub?")? {
-            return Err(anyhow!(
-                "GitHub SSH access not confirmed; fetching private flake inputs (dl-herd) will fail"
-            ));
-        }
-        if github_ssh_authenticated(runner, dir) {
-            return Ok(());
-        }
-        println!("Still not authenticating as git@github.com.");
-    }
-}
-
 /// Which features to register, given the catalog and an answer for each.
 ///
 /// `base` is always included and never asked about -- every machine has it.
@@ -183,6 +115,56 @@ fn extract_state_version(configuration_nix: &str) -> Option<String> {
     })
 }
 
+/// Pull every top-level `users.*` statement out of a generated
+/// `configuration.nix`, verbatim, brace-balanced lines included.
+///
+/// This is where the installer puts the one thing with no other home in
+/// this repo at all: the account itself -- its groups, its shell, and
+/// whatever password mechanism was actually applied to the real disk.
+/// Dropping it once (on the theory that `users.mutableUsers`'s default
+/// leaves an undeclared account alone) still left a real machine's login
+/// locked out after a reboot, so it's pulled forward explicitly instead of
+/// trusting that default.
+///
+/// A brace-depth scan, not a Nix parser -- good enough for
+/// nixos-generate-config's own uniform `users.users.<name> = { ... };` /
+/// `users.groups.<name> = { ... };` / `users.mutableUsers = ...;` shapes,
+/// which never nest a `{`/`}` inside a string.
+fn extract_users_block(configuration_nix: &str) -> String {
+    let lines: Vec<&str> = configuration_nix.lines().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < lines.len() {
+        if !lines[i].trim_start().starts_with("users.") {
+            i += 1;
+            continue;
+        }
+        let mut depth = 0i32;
+        let mut opened = false;
+        loop {
+            let line = lines[i];
+            out.push_str(line);
+            out.push('\n');
+            for ch in line.chars() {
+                match ch {
+                    '{' => {
+                        depth += 1;
+                        opened = true;
+                    }
+                    '}' => depth -= 1,
+                    _ => {}
+                }
+            }
+            i += 1;
+            let statement_closed = line.trim_end().ends_with(';') && (!opened || depth == 0);
+            if statement_closed || i >= lines.len() {
+                break;
+            }
+        }
+    }
+    out
+}
+
 /// Copy this machine's detected hardware facts into the repo, verbatim.
 ///
 /// Disk UUIDs and kernel modules can't be templated -- there is nothing to
@@ -205,20 +187,26 @@ fn ensure_nixos_hardware_file(dir: &Path, host: &str) -> Result<Option<String>> 
     Ok(Some(format!("nixos/hardware/{host}.nix")))
 }
 
-/// Seed `nixos/hosts/<host>.nix` -- not a copy, a minimal starting point.
+/// Seed `nixos/hosts/<host>.nix` from the generated `configuration.nix`.
 ///
 /// `nixosConfigurations.<host>` (flake.nix's `mkNixos`) hard-requires this
 /// file to exist, with no `/etc/nixos` fallback the way the hardware module
 /// has one, so a fresh NixOS install needs *something* here before the first
-/// `dlsys switch nixos`. The only two facts every host file actually needs
-/// -- confirmed by diffing all three committed ones against
-/// `nixos/common.nix` -- are the hostname (already known: it's `host`) and
-/// stateVersion (never in common.nix, must come from the real machine, must
-/// never be guessed or bumped). Everything else in a stock generated
-/// `configuration.nix` either duplicates common.nix already or is installer
-/// boilerplate with no home in this repo; every real host file was
-/// hand-grown from something this small, not trimmed down from something
-/// large, so that is the shape to generate too.
+/// `dlsys switch nixos`.
+///
+/// Earlier attempts here either generated just `networking.hostName` +
+/// `system.stateVersion` (dropped the user account entirely -- on a real
+/// machine that still left the primary login effectively locked out after a
+/// reboot, since the account's groups/shell/password have no other home),
+/// or copied the whole generated file verbatim (pulls in every bit of
+/// installer boilerplate -- bootloader, xserver, locale, etc. -- that either
+/// duplicates `nixos/common.nix` or doesn't belong in this repo at all).
+///
+/// This is the middle ground: `host` is whatever the operator was asked for
+/// (not auto-detected -- see `main.rs`'s `Command::Init`, since the
+/// installer's own hostname is often a placeholder), `system.stateVersion`
+/// and the full `users.*` block are scraped out of the generated file
+/// verbatim, and nothing else comes along for the ride.
 fn ensure_nixos_host_file(dir: &Path, host: &str) -> Result<Option<String>> {
     let dst = dir.join("nixos/hosts").join(format!("{host}.nix"));
     if dst.exists() {
@@ -231,20 +219,27 @@ fn ensure_nixos_host_file(dir: &Path, host: &str) -> Result<Option<String>> {
              create nixos/hosts/{host}.nix by hand before running 'dlsys switch nixos'"
         )
     })?;
+    let users_block = generated.as_deref().map(extract_users_block).unwrap_or_default();
 
     let dst_dir = dir.join("nixos/hosts");
     std::fs::create_dir_all(&dst_dir)
         .map_err(|e| anyhow!("could not create {}: {e}", dst_dir.display()))?;
-    let contents = format!(
-        "{{ ... }}:\n\n{{\n  networking.hostName = \"{host}\";\n  system.stateVersion = \"{state_version}\";\n}}\n"
+    let mut contents = format!(
+        "{{ config, pkgs, lib, ... }}:\n\n{{\n  networking.hostName = \"{host}\";\n  system.stateVersion = \"{state_version}\";\n"
     );
+    if !users_block.trim().is_empty() {
+        contents.push('\n');
+        contents.push_str(&users_block);
+    }
+    contents.push_str("}\n");
     std::fs::write(&dst, contents).map_err(|e| anyhow!("could not write {}: {e}", dst.display()))?;
     Ok(Some(format!("nixos/hosts/{host}.nix")))
 }
 
 /// Set up this NixOS machine's repo-tracked config, if it is not there
-/// already -- a generated minimal `hosts/<host>.nix` plus a verbatim-copied
-/// `hardware/<host>.nix`. No-op on a non-NixOS machine.
+/// already -- a seeded `hosts/<host>.nix` (hostname + stateVersion + the
+/// users block) plus a verbatim-copied `hardware/<host>.nix`. No-op on a
+/// non-NixOS machine.
 fn ensure_nixos_host_files(dir: &Path, host: &str) -> Result<Vec<String>> {
     if !switch::is_nixos_host() {
         return Ok(Vec::new());
@@ -296,8 +291,6 @@ pub fn run(runner: &dyn Runner, dir: &Path, host: &str, prompt: &dyn Prompt) -> 
         return Err(anyhow!("git commit failed"));
     }
 
-    ensure_github_ssh(runner, dir, prompt)?;
-
     let flake = format!(".#{host}");
     if !switch::hm(runner, dir, &["switch", "--impure", "--flake", &flake])? {
         return Err(anyhow!(
@@ -329,21 +322,59 @@ mod tests {
     }
 
     #[test]
-    fn extract_state_version_tolerates_extra_whitespace() {
-        let generated = "  system.stateVersion   =   \"25.05\"  ;\n";
-        assert_eq!(extract_state_version(generated), Some("25.05".to_string()));
-    }
-
-    #[test]
     fn extract_state_version_is_none_when_absent() {
         let generated = "{ config, ... }:\n{\n  networking.hostName = \"nixos\";\n}\n";
         assert_eq!(extract_state_version(generated), None);
     }
 
     #[test]
-    fn extract_state_version_ignores_a_commented_out_line() {
-        let generated = "# system.stateVersion = \"24.11\";\n";
-        assert_eq!(extract_state_version(generated), None);
+    fn extract_users_block_pulls_a_multiline_attrset() {
+        let generated = concat!(
+            "{ config, lib, pkgs, ... }:\n",
+            "{\n",
+            "  system.stateVersion = \"24.11\";\n",
+            "  users.users.alice = {\n",
+            "    isNormalUser = true;\n",
+            "    extraGroups = [ \"wheel\" \"networkmanager\" ];\n",
+            "    hashedPassword = \"$6$abc$def\";\n",
+            "  };\n",
+            "}\n",
+        );
+        let block = extract_users_block(generated);
+        assert!(block.contains("users.users.alice"), "{block}");
+        assert!(block.contains("hashedPassword"), "{block}");
+        assert!(block.contains("isNormalUser"), "{block}");
+        assert!(!block.contains("system.stateVersion"), "{block}");
+    }
+
+    #[test]
+    fn extract_users_block_pulls_a_single_line_statement() {
+        let generated = "{ ... }:\n{\n  users.mutableUsers = false;\n  networking.hostName = \"x\";\n}\n";
+        let block = extract_users_block(generated);
+        assert!(block.contains("users.mutableUsers = false;"), "{block}");
+        assert!(!block.contains("networking.hostName"), "{block}");
+    }
+
+    #[test]
+    fn extract_users_block_pulls_multiple_statements() {
+        let generated = concat!(
+            "{ ... }:\n",
+            "{\n",
+            "  users.groups.alice = { };\n",
+            "  users.users.alice = {\n",
+            "    isNormalUser = true;\n",
+            "  };\n",
+            "}\n",
+        );
+        let block = extract_users_block(generated);
+        assert!(block.contains("users.groups.alice"), "{block}");
+        assert!(block.contains("users.users.alice"), "{block}");
+    }
+
+    #[test]
+    fn extract_users_block_is_empty_without_a_users_section() {
+        let generated = "{ ... }:\n{\n  networking.hostName = \"x\";\n}\n";
+        assert_eq!(extract_users_block(generated), "");
     }
 
     /// Answers `true` for the named features, `false` for everything else,

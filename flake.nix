@@ -8,10 +8,6 @@
       url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    dl-herd = {
-      url = "git+ssh://git@github.com/dlangevi/dl-herd.git";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     plasma-manager = {
       url = "github:nix-community/plasma-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -19,7 +15,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, dl-herd, plasma-manager, ... }:
+  outputs = { self, nixpkgs, nixpkgs-unstable, home-manager, plasma-manager, ... }:
     let
       system = "x86_64-linux";
       pkgs-unstable = import nixpkgs-unstable { inherit system; config.allowUnfree = true; };
@@ -35,31 +31,50 @@
       homeDirectory = builtins.getEnv "HOME";
 
       # Prefer a working copy of dl-herd when one is checked out, so edits there
-      # take effect without a push + `nix flake update` cycle; fall back to the
-      # locked GitHub input on machines that don't have it. Absolute path
+      # take effect without a push + fetch cycle; fall back to a pinned fetch
+      # of the GitHub repo on machines that don't have it. Absolute path
       # rather than `homeDirectory` so this doesn't change meaning under sudo.
       #
-      # Caveat: the local flake brings its own nixpkgs (its lock pins
-      # nixos-unstable), so `inputs.dl-herd.inputs.nixpkgs.follows` does not
-      # apply in this branch and herd gets rebuilt against that pin.
+      # Not a flake `input`, deliberately: nix fetches every declared top-level
+      # input before it can even call this `outputs` function, regardless of
+      # whether anything below actually dereferences it. That made dl-herd's
+      # old `git+ssh://` input a hard prerequisite for *any* `dlsys switch` --
+      # even a `base`-only machine with no GitHub SSH key yet -- which is
+      # exactly backwards for a fresh machine that needs home-manager (and
+      # Syncthing) up before it has any identity at all. Fetching it here
+      # instead, inside `let`, is lazy per-host: `mkHome` only ever forces
+      # `features.${name}` for names in that host's own feature list, so a
+      # host that never selects "herd" never forces `herdSrc` and never
+      # fetches dl-herd, auth or no auth.
       #
-      # `git+file://`, not `path:`. `path:` copies the directory verbatim and
-      # ignores .gitignore, so every switch hauled the whole working tree into
-      # the store -- 4.2G measured on suspense (a 2.2G cargo target/ plus 1.6G
-      # of .claude transcripts) against 664K of actually-tracked source. That
-      # copy ran on every `dlsys switch` and was the long pause at
-      # `copying '/home/dlangevi/auto/dl-herd' to the store`. The git fetcher
-      # copies tracked files only, which is the 664K.
+      # Caveat (same as before this change): the local flake brings its own
+      # nixpkgs, and the fetched-by-rev branch has no `inputs.nixpkgs.follows`
+      # to give it either, so herd gets built against whatever nixpkgs its own
+      # flake.lock pins in both branches now, not this flake's.
+      #
+      # `git+file://`, not `path:`, for the local branch. `path:` copies the
+      # directory verbatim and ignores .gitignore, so every switch hauled the
+      # whole working tree into the store -- 4.2G measured on suspense (a
+      # 2.2G cargo target/ plus 1.6G of .claude transcripts) against 664K of
+      # actually-tracked source. That copy ran on every `dlsys switch` and was
+      # the long pause at `copying '/home/dlangevi/auto/dl-herd' to the
+      # store`. The git fetcher copies tracked files only, which is the 664K.
       #
       # The local-override intent is unchanged: uncommitted edits to *tracked*
       # files are still picked up (nix reads the dirty working tree and warns).
       # What changes is that a brand-new file needs `git add` before it is
       # visible -- the same rule this repo already has for its own modules.
+      #
+      # The fetched branch is pinned by `rev` in dl-herd.lock.json, refreshed
+      # by `dlsys switch --update` (crates/dlsys/src/switch.rs). A git rev is
+      # already content-addressed (a hash over the full tree+history), so it
+      # fully pins the fetch on its own -- no narHash needed alongside it.
       herdLocal = "/home/dlangevi/auto/dl-herd";
+      herdLock = builtins.fromJSON (builtins.readFile ./dl-herd.lock.json);
       herdSrc =
         if builtins.pathExists (herdLocal + "/flake.nix")
         then builtins.getFlake "git+file://${herdLocal}"
-        else dl-herd;
+        else builtins.getFlake "git+ssh://git@github.com/dlangevi/dl-herd.git?rev=${herdLock.rev}";
 
       # The cargo workspace under ./crates, as one source tree shared by every
       # binary built from it.
@@ -136,6 +151,7 @@
 
       mkNixos = host: nixpkgs.lib.nixosSystem {
         inherit system;
+        specialArgs = { inherit pkgs-unstable; };
         modules = [
           ./nixos/common.nix
           ./nixos/hosts/${host}.nix

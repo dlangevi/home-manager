@@ -36,7 +36,53 @@
 #      to snapctl as well would be a second, worse surface for the same thing.
 #
 # Only the keys named below are written -- see overrideConfig.
-{ config, snapctl, ... }:
+{ config, lib, pkgs, hostname, snapctl, ... }:
+let
+  # Standalone home-manager (this is `home-manager.lib.homeManagerConfiguration`
+  # in flake.nix, not folded into suspense's nixosSystem) has no view into the
+  # NixOS config, so it cannot read
+  # nixos/hosts/suspense.nix's `services.displayManager.defaultSession` the
+  # way that file's own `output_name` conditional does. This flag is that same
+  # fact, copied by hand -- flip it in lockstep whenever defaultSession there
+  # changes away from (or back to) "plasmax11". Flipped back to true
+  # (2026-11-11): the Wayland cutover was reverted in suspense.nix after a
+  # live NVIDIA/KWin/XWayland flicker artifact outweighed the capture-race
+  # fix it was meant to deliver -- see that file's comment for the detail.
+  onPlasmaX11 = true;
+
+  # Both variants below are measured-live values from each backend, not a
+  # name substitution on one template -- geometry differs between them too
+  # (the 1080p panel's undo position is 0,219 under X11 but 0,0 under
+  # Wayland), not just the connector names.
+  sunshineDesktopPrepCmd =
+    if onPlasmaX11 then {
+      # Restored from commit aaac5b5 (the last X11-only version, predating
+      # the Wayland capture-backend test). No scale or vrrpolicy verbs: both
+      # are confirmed no-ops/unsupported under X11 on this GPU --
+      # `kscreen-doctor -o` reports "Vrr: incapable" on both outputs here,
+      # and the scale verb silently leaves scale at 1 (see commit aaac5b5's
+      # message for the live test).
+      do = "/run/current-system/sw/bin/kscreen-doctor output.DP-0.disable output.DP-4.mode.2560x1440@165 output.DP-4.position.0,0";
+      undo = "/run/current-system/sw/bin/kscreen-doctor output.DP-4.mode.2560x1440@165 output.DP-4.position.1920,0 output.DP-0.enable output.DP-0.mode.1920x1080@165 output.DP-0.position.0,219";
+    } else {
+      # From commit b9bf65c, tested live under a Wayland login
+      # (2026-11-09): KWin/KScreen's Wayland connector names (DP-1 = 1080p,
+      # DP-3 = 1440p), and here the scale and vrrpolicy verbs both do take
+      # effect (unlike X11) -- scale doubles the 1440p panel's UI for
+      # legibility on a remote client, vrrpolicy.never works around a
+      # confirmed NVIDIA-595.x/KWin-6.6.x VRR+LFC flicker bug during
+      # streaming.
+      #
+      # A 2026-11-11 game-streaming session flickered and scale was briefly
+      # suspected (dropping it to 1 live, stream still running, appeared to
+      # stop the flicker) -- but that was a false positive. The game had its
+      # own in-game HDR toggle on while this output runs SDR-only (`kscreen-
+      # doctor -o` reports HDR incapable/disabled here); disabling HDR in
+      # the game fixed it, unrelated to KWin's output scale. Restored.
+      do = "/run/current-system/sw/bin/kscreen-doctor output.DP-1.disable output.DP-3.mode.2560x1440@165 output.DP-3.position.0,0 output.DP-3.scale.2 output.DP-3.vrrpolicy.never";
+      undo = "/run/current-system/sw/bin/kscreen-doctor output.DP-3.vrrpolicy.automatic output.DP-3.scale.1 output.DP-3.mode.2560x1440@165 output.DP-3.position.1920,0 output.DP-1.enable output.DP-1.mode.1920x1080@165 output.DP-1.position.0,0";
+    };
+in
 {
   # Pull KRunner up to login time. plasma-workspace.target is the right anchor:
   # it is reached once the desktop is actually up, so krunner warms in the idle
@@ -50,6 +96,61 @@
   xdg.configFile."systemd/user/plasma-workspace.target.wants/plasma-krunner.service".source =
     config.lib.file.mkOutOfStoreSymlink
       "/run/current-system/sw/share/systemd/user/plasma-krunner.service";
+
+  # Sunshine's single "Desktop" app: the 1080p panel is never captured anyway
+  # -- services.sunshine.settings.output_name pins capture to the 1440p panel
+  # in nixos/hosts/suspense.nix -- so a connected Moonlight client gets
+  # nothing from it except desktop clutter. Disabling it for the session's
+  # duration instead gives the 1440p panel the whole desktop.
+  #
+  # prep-cmd's "do" runs on stream start, "undo" on stream end/disconnect --
+  # both inherit almost no environment (same as a KDE global shortcut), hence
+  # the absolute /run/current-system/sw/bin path rather than a bare command.
+  # Both name an explicit mode, not just position/enable -- tested live and
+  # found that `output.<name>.enable` alone, after an interleaving disable of
+  # another output, left the output enabled but modeless, i.e. actually
+  # blank; naming the mode is what makes it come back with a picture.
+  #
+  # The actual do/undo strings (including the backend-dependent connector
+  # names and whether scale/vrrpolicy are included at all) are
+  # `sunshineDesktopPrepCmd` above -- see its comment for why.
+  xdg.configFile."sunshine/apps.json" = lib.mkIf (hostname == "suspense") {
+    text = builtins.toJSON {
+      env.PATH = "$(PATH):$(HOME)/.local/bin";
+      apps = [
+        {
+          name = "Desktop";
+          image-path = "desktop.png";
+          prep-cmd = [ sunshineDesktopPrepCmd ];
+        }
+      ];
+    };
+  };
+
+  # Manual escape hatch for sunshineDesktopPrepCmd's scale verb above: Sunshine
+  # only runs an app's "undo" on the *next* app launch, never on a bare client
+  # disconnect (confirmed in src/process.cpp -- terminate() is called before
+  # launching a new app, on sunshine's own shutdown, or when a monitored
+  # process exits; a Moonlight disconnect that isn't also an explicit "quit
+  # app" is none of those). So closing Moonlight without quitting the app
+  # leaves the 1440p panel's scale wherever "do" left it, for however long
+  # until the next stream start. `ui-scale <1|2>` lets you fix that by hand
+  # without waiting for the next connect.
+  #
+  # Same no-op-under-X11 caveat as the prep-cmd's scale verb: this has no
+  # visible effect while onPlasmaX11 (above) is true, i.e. right now -- it
+  # only does something the next time Wayland is the default session.
+  home.packages = lib.optional (hostname == "suspense") (
+    pkgs.writeShellScriptBin "ui-scale" ''
+      set -euo pipefail
+      if [ "$#" -ne 1 ] || { [ "$1" != "1" ] && [ "$1" != "2" ]; }; then
+        echo "usage: ui-scale <1|2>" >&2
+        exit 1
+      fi
+      exec /run/current-system/sw/bin/kscreen-doctor \
+        output.${if onPlasmaX11 then "DP-4" else "DP-3"}.scale."$1"
+    ''
+  );
 
   programs.plasma = {
     enable = true;
@@ -177,6 +278,34 @@
           ".local/share/Steam"
         ]);
       };
+
+      # KWin's fullscreen-unredirect optimization (an app in exclusive
+      # fullscreen gets to write straight to the front buffer, bypassing the
+      # compositor) is exactly what breaks Sunshine's X11 capture: Sunshine
+      # grabs a snapshot of that buffer with no atomic swap to sync against,
+      # so a capture mid-scanout shows old pixels above the tear line and new
+      # pixels below it. Only visible over Moonlight -- the local display
+      # scans out the same buffer and never notices the tear.
+      #
+      # WindowsBlockCompositing=false keeps the compositor live through
+      # fullscreen games, which is what Sunshine needs here, at the cost of
+      # the unredirect fast-path's local-only performance win -- irrelevant
+      # for a machine whose point is to be streamed from.
+      kwinrc."Compositing"."WindowsBlockCompositing" = false;
+
+      # AllowTearing is Wayland's equivalent of the X11 unredirect fast path
+      # above, and carries the same capture-tearing risk Sunshine's stream is
+      # exposed to -- confirmed live 2026-11-11 streaming an XWayland game
+      # (Steam/Proton, GPU only 55% utilized, well under its power limit,
+      # with the default AllowTearing=false): turning this on measurably
+      # improved in-game performance. But the same Wayland session also hit
+      # a separate, worse NVIDIA/KWin/XWayland flicker-artifact bug that led
+      # to reverting the whole Wayland cutover (see suspense.nix's
+      # defaultSession comment), so this only matters again once Wayland is
+      # retried -- tied to onPlasmaX11 so it goes along for that ride rather
+      # than sitting on as a no-op (or worse, a live footgun if Wayland
+      # becomes selectable again some other way) while X11 is the default.
+      kwinrc."Compositing"."AllowTearing" = !onPlasmaX11;
     };
   };
 }

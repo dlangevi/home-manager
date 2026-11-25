@@ -34,6 +34,62 @@
     nix-direnv.enable = true;
   };
 
+  # Two SSH identity roles, each at a fixed path so this one shared module
+  # resolves correctly no matter which machine it activates on:
+  #
+  #   - admin (~/.ssh/id_admin): held only by suspense and console. Grants a
+  #     real shell on every machine (dlsys rollout, ad-hoc admin). Without
+  #     IdentitiesOnly, `ssh dance` would fall back to the default
+  #     ~/.ssh/id_ed25519 if id_admin were ever missing -- on a machine that
+  #     also held the console@frameart rrsync-restricted key under that
+  #     default name, that gets a confusing PTY-allocation failure instead of
+  #     a clean auth failure.
+  #   - github (~/.ssh/id_github): held by all three machines, registered
+  #     with GitHub, used only for git@github.com. No shell access anywhere.
+  #
+  # Private key material is never provisioned by this repo -- only the
+  # resulting public keys, in each host's nixos/hosts/<name>.nix
+  # authorizedKeys.
+  programs.ssh.enable = true;
+  # enableDefaultConfig is deprecated upstream; these are the exact defaults
+  # it used to inject, pinned explicitly under settings."*" instead.
+  programs.ssh.enableDefaultConfig = false;
+  programs.ssh.settings."*" = {
+    ForwardAgent = false;
+    AddKeysToAgent = "no";
+    Compression = false;
+    ServerAliveInterval = 0;
+    ServerAliveCountMax = 3;
+    HashKnownHosts = false;
+    UserKnownHostsFile = "~/.ssh/known_hosts";
+    ControlMaster = "no";
+    ControlPath = "~/.ssh/master-%r@%n:%p";
+    ControlPersist = "no";
+  };
+  programs.ssh.settings."dance" = {
+    User = "dance";
+    IdentityFile = "~/.ssh/id_admin";
+    IdentitiesOnly = true;
+  };
+  programs.ssh.settings."console" = {
+    User = "console";
+    IdentityFile = "~/.ssh/id_admin";
+    IdentitiesOnly = true;
+  };
+  programs.ssh.settings."suspense" = {
+    User = "dlangevi";
+    IdentityFile = "~/.ssh/id_admin";
+    IdentitiesOnly = true;
+  };
+  # Previously hand-written in ~/.ssh/config; folded in so switching to the
+  # Nix-managed file doesn't drop it.
+  programs.ssh.settings."github.com" = {
+    HostName = "github.com";
+    User = "git";
+    IdentityFile = "~/.ssh/id_github";
+    IdentitiesOnly = true;
+  };
+
   # Unfree in two separate worlds, and enabling one does nothing for the other:
   #
   #   - Everything this repo builds already works: flake.nix sets

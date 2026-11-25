@@ -82,11 +82,16 @@
       # dependence on the pane having produced output since. wezterm prefers the
       # user var and falls back to the title (which is what a tmux pane sets,
       # via set-titles-string in tmux.nix).
+      # $1 is raw command text, so it never goes through prompt expansion:
+      # with PROMPT_SUBST set, `print -P` would evaluate a `$(` or a backtick
+      # in a command name and the hook would die with a parse error. Expand
+      # %m once on its own, then emit the rest literally.
       _dl_title() {
-        print -Pn "\e]2;%m:$1\a"
+        local label="''${(%):-%m}:$1"
+        print -rn -- $'\e]2;'"$label"$'\a'
         [[ -n "$WEZTERM_PANE" ]] || return
         printf '\e]1337;SetUserVar=dl_title=%s\a' \
-          "$(print -Pn "%m:$1" | base64 -w0)"
+          "$(print -rn -- "$label" | base64 -w0)"
       }
       # At the prompt nothing is running, so the shell names itself, matching
       # what tmux's automatic-rename showed for an idle window. Constant for the

@@ -46,7 +46,6 @@ in
     # heavy media set -- blur included. Every machine takes desktop-apps.
     moonlight-qt
     kdePackages.spectacle
-    kdePackages.kdeconnect-kde
     kdePackages.filelight
   ];
 
