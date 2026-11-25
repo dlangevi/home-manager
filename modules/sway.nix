@@ -326,6 +326,25 @@ in
         background: #1d1f21;
         color: #c5c8c6;
       }
+      /* GTK's default button styling is what was swallowing contrast here --
+         plain background/color on #workspaces doesn't reach the buttons
+         inside it, so each state needs its own rule. */
+      #workspaces button {
+        padding: 0 8px;
+        background: transparent;
+        color: #e8e8e8;
+        border: none;
+        border-bottom: 2px solid transparent;
+      }
+      #workspaces button.focused {
+        color: #1d1f21;
+        background: #81a2be;
+        border-bottom: 2px solid #c5c8c6;
+      }
+      #workspaces button.urgent {
+        color: #1d1f21;
+        background: #cc6666;
+      }
     '';
   };
 }
