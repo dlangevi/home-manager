@@ -8,7 +8,10 @@
   # three ways, and this list is its registration taken literally, so chonk
   # currently gets neither chat-apps nor media-apps -- add them if it turns
   # out to want them.
-  "chonk"    = [ "base" "desktop-apps" "herd" ];
+  #
+  # Also an underpowered laptop (2010 Core i5, nouveau GT218) -- gets sway
+  # the same way blur does; see nixos/hosts/chonk.nix for the rest of that.
+  "chonk"    = [ "base" "desktop-apps" "herd" "sway" ];
   "console"  = [ "base" "desktop-apps" "chat-apps" "media-apps" "mpd-client" "soulseek" "herd" "wake-suspense" ];
   "dance"    = [ "base" "desktop-apps" "chat-apps" "media-apps" "streaming" "music-server" "snapclient" "mpd-client" "herd" ];
   # slskd (nixos/modules/slskd.nix) is the acquisition backend for
