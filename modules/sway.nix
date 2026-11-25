@@ -1,9 +1,25 @@
 { config, pkgs, lib, ... }:
 let
-  statusConfig = "${config.xdg.configHome}/i3status-rust/config-default.toml";
   modifier = config.wayland.windowManager.sway.config.modifier;
 
   nmApplet = pkgs.networkmanagerapplet;
+
+  # The headset bluetooth block used to right-click-toggle by itself
+  # (i3status-rust's own default action for its `bluetooth` block). Waybar's
+  # bluetooth module has no per-MAC toggle, so this is that one bit of
+  # specific behaviour kept as its own script.
+  headsetMac = "AC:BF:71:CA:44:D0";
+  toggleHeadset = pkgs.writeShellApplication {
+    name = "toggle-headset-bluetooth";
+    runtimeInputs = [ pkgs.bluez ];
+    text = ''
+      if bluetoothctl info "${headsetMac}" | grep -q "Connected: yes"; then
+        bluetoothctl disconnect "${headsetMac}"
+      else
+        bluetoothctl connect "${headsetMac}"
+      fi
+    '';
+  };
 
   # Both session agents below are scoped to sway-session.target rather than
   # graphical-session.target. suspense selects *both* the `plasma` and `sway`
@@ -64,20 +80,13 @@ in
       # Home-manager's sway module defaults terminal to foot; point it at
       # wezterm instead.
       terminal = "wezterm";
-      bars = [
-        {
-          statusCommand = "${pkgs.i3status-rust}/bin/i3status-rs ${statusConfig}";
-          # swaybar's tray resolves StatusNotifierItem icons by name through
-          # the XDG icon themes on XDG_DATA_DIRS, and with no theme named it
-          # searches only hicolor -- which carries none of those names. fcitx5
-          # asks for "input-keyboard-symbolic", the lookup failed, and swaybar
-          # drew its red frowning-face placeholder instead. Adwaita has that
-          # name and the rest of the freedesktop set.
-          extraConfig = ''
-            tray icon_theme Adwaita
-          '';
-        }
-      ];
+      # swaybar's tray can show icons but not the StatusNotifierItem Menu
+      # (com.canonical.dbusmenu) protocol at all -- it has no client-side
+      # menu renderer, so nm-applet (which is Menu-only, no Activate) was
+      # permanently unclickable no matter what was configured here. Waybar
+      # (programs.waybar below) replaces it precisely for that: its tray
+      # module is built on libdbusmenu-gtk3 and actually renders that menu.
+      bars = [ ];
       # The GUI network/bluetooth surfaces, plus nm-applet's own secret and
       # connection dialogs, which are transients that tile badly.
       floating.criteria = [
@@ -177,8 +186,11 @@ in
     Install.WantedBy = [ "sway-session.target" ];
   };
 
-  # Named by the bar's `tray icon_theme` above; without it on the profile
-  # there are no icons for the tray to find.
+  # GTK resolves tray and app icons through the icon theme it's told to use
+  # (gtk-icon-theme-name, defaulting to "Adwaita" when unset) -- unlike
+  # swaybar's own custom lookup, which had no default and needed one named
+  # explicitly. Waybar is a real GTK app, so this is just here to make sure
+  # Adwaita is actually on the profile for that default to resolve to.
   home.packages = [
     pkgs.adwaita-icon-theme
     # nm-applet itself comes from the systemd unit above; this is for the
@@ -208,114 +220,108 @@ in
     x11.enable = true;
   };
 
-  # Plain i3status can't react to clicks/scrolls -- i3status-rust speaks the
-  # same i3bar click-event protocol swaybar already understands, so it's a
-  # drop-in replacement that also gets us wifi click + volume scroll for free.
-  programs.i3status-rust = {
+  # Replaces swaybar + i3status-rust. The only reason to move off a working
+  # bar was the tray: swaybar cannot render a StatusNotifierItem's Menu
+  # (com.canonical.dbusmenu), which is nm-applet's *entire* interaction
+  # model (it has no Activate method at all) -- so nm-applet's icon was
+  # permanently unclickable there. Waybar's tray module is built on
+  # libdbusmenu-gtk3 and actually renders that menu.
+  programs.waybar = {
     enable = true;
-    bars.default.icons = "emoji";
-    bars.default.blocks = [
-      {
-        block = "battery";
-        # suspense has no battery; blur does. Showing nothing there beats a
-        # permanent "missing" block on the one machine without one. The
-        # emoji icon set already has a charging-plug icon, so $icon alone
-        # tells plugged-in-vs-not; time_remaining counts down to empty on
-        # battery and up to full while charging, same placeholder either way.
-        missing_format = "";
-        # full_format/not_charging_format/empty_format each default to a
-        # bare " $icon " independently of `format` -- the block force-sets
-        # status to Full above full_threshold (95%) regardless of plug
-        # state, so at a high charge the icon-only default was winning and
-        # swallowing percentage/time even right after unplugging at ~98%.
-        format = " $icon$percentage {$time_remaining.dur(hms:true, min_unit:m)|} ";
-        full_format = " $icon$percentage ";
-        not_charging_format = " $icon$percentage ";
-        empty_format = " $icon$percentage ";
+    # Scoped the same way as the nm-applet/polkit-agent units above --
+    # suspense also runs the `plasma` feature, which has its own panel and
+    # tray, so this must only start inside an actual sway session.
+    systemd.enable = true;
+    systemd.targets = [ "sway-session.target" ];
+
+    settings.mainBar = {
+      layer = "top";
+      position = "top";
+      height = 24;
+      modules-right = [
+        "battery"
+        "network"
+        "bluetooth"
+        "backlight"
+        "pulseaudio"
+        "tray"
+        "clock"
+      ];
+
+      battery = {
+        # suspense has no battery; blur and chonk do. Waybar's battery
+        # module auto-hides itself when there are no batteries to report on,
+        # unlike i3status-rust's block, which needed an explicit empty
+        # missing_format to avoid a permanent "missing" indicator.
+        format = "{icon} {capacity}%";
+        format-charging = "🔌 {capacity}% {time}";
+        format-icons = [ "🪫" "🔋" ];
+      };
+
+      network = {
+        # format-ethernet/format-wifi already distinguish wired vs wireless
+        # on their own, so there's no need for the ip-address fallback
+        # i3status-rust's single shared `format` needed to avoid
+        # misreporting a live ethernet link (no ssid) as down.
+        format-wifi = "📶 {essid} ({signalStrength}%)";
+        format-ethernet = "🌐 {ipaddr}";
+        format-disconnected = "down";
+        on-click = "${nmApplet}/bin/nm-connection-editor";
+      };
+
+      bluetooth = {
+        # Generic adapter/connected-device status rather than i3status-rust's
+        # single-MAC-only block -- it'll show any paired device's battery,
+        # not just the one headset. Left click still opens overskride to
+        # pair anything new; right click keeps the one-headset quick
+        # connect/disconnect toggle the old block's default action gave.
+        format-connected = "🎧 {num_connections}";
+        format-connected-battery = "🎧 {device_battery_percentage}%";
+        format-off = "";
+        on-click = "${pkgs.overskride}/bin/overskride";
+        on-click-right = "${toggleHeadset}/bin/toggle-headset-bluetooth";
+      };
+
+      backlight = {
+        # No `device` set on purpose, same as before: it picks up whatever
+        # is in /sys/class/backlight (intel_backlight here, the amdgpu
+        # equivalent elsewhere). Waybar's module doesn't apply
+        # i3status-rust's perceptual root_scaling curve -- brightnessctl's
+        # steps are linear here, a minor regression traded for the tray fix.
+        format = "{icon} {percent}%";
+        format-icons = [ "🌑" "🌒" "🌓" "🌔" "🌕" ];
+        on-scroll-up = "${pkgs.brightnessctl}/bin/brightnessctl set 5%+";
+        on-scroll-down = "${pkgs.brightnessctl}/bin/brightnessctl set 5%-";
+      };
+
+      pulseaudio = {
+        format = "{icon} {volume}%";
+        format-muted = "🔇";
+        format-icons.default = [ "🔈" "🔉" "🔊" ];
+        on-click = "${pkgs.wireplumber}/bin/wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle";
+        scroll-step = 5;
+      };
+
+      tray = {
+        icon-size = 16;
+        spacing = 8;
+      };
+
+      clock = {
+        interval = 1;
+        format = "{:%Y-%m-%d %H:%M:%S}";
+      };
+    };
+
+    style = ''
+      * {
+        font-family: monospace;
+        font-size: 11px;
       }
-      {
-        block = "net";
-        # $icon already differs wired vs wireless, so leaning on it plus an
-        # ip fallback avoids a hardcoded "Wifi down" that misreports a live
-        # ethernet link (no ssid) as no connection at all.
-        format = " $icon {$ssid $signal_strength|$ip|down} ";
-        click = [
-          {
-            button = "left";
-            # Connecting to a *nearby* network is the tray icon's menu --
-            # nm-applet is the only thing that can scan and prompt. This
-            # click is the other half: the editor for connections already
-            # saved, which is where a stale password or a wrong
-            # autoconnect gets fixed.
-            cmd = "${nmApplet}/bin/nm-connection-editor";
-          }
-        ];
+      window#waybar {
+        background: #1d1f21;
+        color: #c5c8c6;
       }
-      {
-        block = "bluetooth";
-        # This block monitors one device by MAC -- it is not an adapter
-        # on/off indicator, there isn't one. These are the headphones;
-        # bluez reports their battery over D-Bus without its experimental
-        # flag, so $percentage populates. Right-click (the block's own
-        # default action) connects/disconnects; left-click opens overskride
-        # to pair anything else.
-        mac = "AC:BF:71:CA:44:D0";
-        # Visible but minimal when disconnected -- just the icon, which is
-        # what you right-click to connect. An empty string here hid the
-        # block entirely and left no way to initiate a connection, which
-        # was the whole point of having it.
-        #
-        # $available is a flag the block only sets when bluez knows the
-        # device at all. Gating on it means a disconnected-but-paired
-        # headset still shows its icon here, while a machine that has
-        # never seen this MAC (suspense, which also gets this feature)
-        # renders nothing.
-        disconnected_format = "{ $available$icon |}";
-        format = " $icon $name{ $percentage|} ";
-        click = [
-          {
-            button = "left";
-            cmd = "${pkgs.overskride}/bin/overskride";
-          }
-        ];
-      }
-      {
-        block = "backlight";
-        # Scroll to dim/brighten, exactly like the sound block below --
-        # the block talks to systemd-logind over D-Bus to set brightness,
-        # so this needs no udev rule or setuid helper.
-        #
-        # No `device` set on purpose: it then picks up whatever is in
-        # /sys/class/backlight, which is intel_backlight here and would be
-        # the amdgpu equivalent elsewhere. missing_format hides it on a
-        # desktop with no panel to dim.
-        missing_format = "";
-        format = " $icon $brightness ";
-        # intel_backlight exposes 7500 raw steps, and perceived lightness
-        # tracks roughly the cube root of luminance -- scrolling linearly
-        # through raw values wastes most of the travel at the bright end
-        # where nothing looks different. The docs suggest 2.4-3.0 for
-        # devices like this.
-        root_scaling = 2.4;
-        # The emoji icon set lists backlight as 🌕🌔🌓🌒🌑 -- brightest
-        # glyph first -- so the default mapping puts a full moon at
-        # minimum brightness and a new moon at maximum. Inverting makes
-        # the moon wax as the screen gets brighter, which is the only
-        # reading anyone expects.
-        invert_icons = true;
-      }
-      {
-        block = "sound";
-        # $icon alone is the condensed speaker glyph; the emoji set swaps it
-        # to a muted speaker on its own once right-click (toggle_mute, the
-        # block's default) mutes -- no separate click wiring needed.
-        format = " $icon {$volume|} ";
-      }
-      {
-        block = "time";
-        interval = 5;
-        format = " $timestamp.datetime(f:'%Y-%m-%d %H:%M:%S') ";
-      }
-    ];
+    '';
   };
 }
