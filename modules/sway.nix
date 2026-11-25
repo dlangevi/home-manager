@@ -330,6 +330,14 @@ in
         background: #1d1f21;
         color: #c5c8c6;
       }
+      /* The | between status modules i3status-rust drew for free -- each of
+         these is its own widget id, with nothing shared to hang a single
+         rule off, hence the explicit list. Skips #battery since the
+         workspace/mode gap already reads as a separator there. */
+      #network, #bluetooth, #backlight, #pulseaudio, #tray, #clock {
+        padding: 0 12px;
+        border-left: 1px solid #707880;
+      }
       /* GTK's default button styling is what was swallowing contrast here --
          plain background/color on #workspaces doesn't reach the buttons
          inside it, so each state needs its own rule. */
