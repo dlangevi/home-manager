@@ -3,25 +3,21 @@ let
   statusConfig = "${config.xdg.configHome}/i3status-rust/config-default.toml";
   modifier = config.wayland.windowManager.sway.config.modifier;
 
-  # A TUI popup in its own wezterm window, sized in cells.
-  #
-  # modules/wezterm.nix sets initial_cols/initial_rows to 240x60 to dodge a
-  # wlroots resize bug, which is deliberately far wider than any real tile.
-  # Letting a popup inherit that and then correcting it with a sway
-  # `resize set` is what broke these: measured, the child saw 240x60 for
-  # about a second before SIGWINCH dropped it to 105x31, so the TUI laid
-  # itself out for a window more than twice its final width. nmtui in
-  # particular never recovers.
-  #
-  # Overriding per-window means the size is right in the first frame and no
-  # resize happens at all -- sway honours a floating window's requested
-  # size, so there is no configure event to race with. Cells, not pixels:
-  # it is the unit the TUI reasons in, and it does not silently change
-  # meaning when the font size does.
-  weztermPopup =
-    { class, cols, rows, cmd }:
-    "wezterm --config initial_cols=${toString cols} --config initial_rows=${toString rows}"
-    + " start --class ${class} -- ${cmd}";
+  nmApplet = pkgs.networkmanagerapplet;
+
+  # Both session agents below are scoped to sway-session.target rather than
+  # graphical-session.target. suspense selects *both* the `plasma` and `sway`
+  # features, so a graphical-session binding would also start these inside a
+  # Plasma session -- which already ships its own polkit agent and its own
+  # NetworkManager secret agent (plasma-nm). Two polkit agents means two
+  # dialogs for one authorisation. sway-session.target is started by
+  # home-manager's sway module (systemd.enable, on by default) and exists
+  # only in a sway session, so this binds the units to the one session that
+  # actually lacks these pieces.
+  swaySessionUnit = {
+    After = [ "sway-session.target" ];
+    PartOf = [ "sway-session.target" ];
+  };
 
   # spectacle needs KWin's screenshot DBus interface, which isn't there under
   # sway. grim+slurp talk to sway directly over wlr-screencopy -- no portal,
@@ -72,9 +68,13 @@ in
           '';
         }
       ];
-      # Tagged with --class by the bar click commands below so these rules
-      # only catch those popups, not every wezterm window.
-      floating.criteria = [ { app_id = "nmtui"; } { app_id = "bluetuith"; } ];
+      # The GUI network/bluetooth surfaces, plus nm-applet's own secret and
+      # connection dialogs, which are transients that tile badly.
+      floating.criteria = [
+        { app_id = "nm-connection-editor"; }
+        { app_id = "nm-applet"; }
+        { app_id = "io.github.kaii_lb.Overskride"; }
+      ];
       window.titlebar = false;
       input."type:keyboard".xkb_options = "ctrl:nocaps";
       keybindings = lib.mkOptionDefault {
@@ -103,8 +103,9 @@ in
       };
     };
     extraConfig = ''
-      for_window [app_id="nmtui"] move position center, focus
-      for_window [app_id="bluetuith"] move position center, focus
+      for_window [app_id="nm-connection-editor"] move position center, focus
+      for_window [app_id="nm-applet"] move position center, focus
+      for_window [app_id="io.github.kaii_lb.Overskride"] move position center, focus
 
       # Launcher moved off Mod1+d -- see modules/sway.nix keybindings.
       unbindsym ${modifier}+d
@@ -112,15 +113,75 @@ in
     '';
   };
 
+  # The piece that was actually missing, not just an uglier UI.
+  #
+  # NetworkManager stores a PSK one of two ways, chosen per connection by
+  # `802-11-wireless-security.psk-flags`. Flag 0 (system-owned) means NM
+  # writes it into /etc/NetworkManager/system-connections/*.nmconnection
+  # itself and can reconnect unattended from boot. Flag 1 (agent-owned)
+  # means NM never persists it at all -- it asks a registered secret agent
+  # for the password on every single connect.
+  #
+  # nmtui registers as a secret agent, but only for as long as it is open,
+  # and it creates connections agent-owned. So every network added on this
+  # host since the Plasma -> sway move was unusable the moment the popup
+  # closed; the journal had been logging
+  #   device (wlp2s0): no secrets: No agents were available for this request
+  # on and off since 2026-11-10. The three networks that still worked
+  # (arborese, arboretum, ForbiddenCity) were the pre-sway ones plasma-nm
+  # had written system-owned.
+  #
+  # nm-applet is a session-long secret agent, so a stored secret is
+  # reachable whenever the session is up -- and, unlike nmtui, its password
+  # dialog exposes the store-for-all-users choice that sets flag 0 in the
+  # first place. --indicator (via preferStatusNotifierItems below) makes it
+  # publish a StatusNotifierItem, which is the protocol swaybar's tray
+  # speaks; its menu is the scan-and-connect list.
+  services.network-manager-applet.enable = true;
+  xsession.preferStatusNotifierItems = true;
+  systemd.user.services.network-manager-applet = {
+    Unit = lib.mkForce ({
+      Description = "Network Manager applet";
+      Requires = [ "tray.target" ];
+    } // swaySessionUnit // {
+      After = [ "sway-session.target" "tray.target" ];
+    });
+    Install.WantedBy = lib.mkForce [ "sway-session.target" ];
+  };
+
+  # polkitd runs (nixos/common.nix) but nothing was registered with it, so
+  # any action needing an authorisation prompt had nowhere to draw one and
+  # simply failed. Plasma supplied this on the other hosts; sway supplies
+  # nothing, so it has to be named. Needed by overskride for adapter-level
+  # bluez operations, and by nm-connection-editor when editing a connection
+  # the networkmanager group does not already cover.
+  systemd.user.services.polkit-gnome-authentication-agent-1 = {
+    Unit = {
+      Description = "polkit-gnome authentication agent";
+    } // swaySessionUnit;
+    Service = {
+      ExecStart =
+        "${pkgs.polkit_gnome}/libexec/polkit-gnome-authentication-agent-1";
+      Restart = "on-failure";
+    };
+    Install.WantedBy = [ "sway-session.target" ];
+  };
+
   # Named by the bar's `tray icon_theme` above; without it on the profile
   # there are no icons for the tray to find.
   home.packages = [
     pkgs.adwaita-icon-theme
-    # Pairing/unpairing surface for the bluetooth block below. A TUI rather
-    # than blueman: keyboard-only like the rest of this setup, and a small
-    # Go binary instead of blueman's GTK + Python tree on a laptop this
-    # underpowered.
-    pkgs.bluetuith
+    # nm-applet itself comes from the systemd unit above; this is for the
+    # Mod1+p launcher and PATH, which is how nm-connection-editor gets
+    # reached when the bar is not where you happen to be looking.
+    nmApplet
+    # Pairing/unpairing surface for the bluetooth block below. GTK4 and
+    # Rust rather than blueman's GTK + Python tree, and launched on demand
+    # rather than sitting resident -- which matters on a laptop this
+    # underpowered. It registers a bluez pairing agent while open, so a
+    # pairing actually completes to a stored link key instead of the
+    # half-paired state scripted bluetoothctl leaves behind.
+    pkgs.overskride
   ];
 
   # Sway sets no cursor theme of its own, so the pointer falls back to the
@@ -168,12 +229,12 @@ in
         click = [
           {
             button = "left";
-            cmd = weztermPopup {
-              class = "nmtui";
-              cols = 100;
-              rows = 30;
-              cmd = "nmtui";
-            };
+            # Connecting to a *nearby* network is the tray icon's menu --
+            # nm-applet is the only thing that can scan and prompt. This
+            # click is the other half: the editor for connections already
+            # saved, which is where a stale password or a wrong
+            # autoconnect gets fixed.
+            cmd = "${nmApplet}/bin/nm-connection-editor";
           }
         ];
       }
@@ -183,7 +244,7 @@ in
         # on/off indicator, there isn't one. These are the headphones;
         # bluez reports their battery over D-Bus without its experimental
         # flag, so $percentage populates. Right-click (the block's own
-        # default action) connects/disconnects; left-click opens bluetuith
+        # default action) connects/disconnects; left-click opens overskride
         # to pair anything else.
         mac = "AC:BF:71:CA:44:D0";
         # Visible but minimal when disconnected -- just the icon, which is
@@ -201,14 +262,7 @@ in
         click = [
           {
             button = "left";
-            # Wider than nmtui: bluetuith puts adapters, devices and
-            # per-device profiles side by side.
-            cmd = weztermPopup {
-              class = "bluetuith";
-              cols = 120;
-              rows = 36;
-              cmd = "bluetuith";
-            };
+            cmd = "${pkgs.overskride}/bin/overskride";
           }
         ];
       }
