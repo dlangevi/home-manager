@@ -238,6 +238,10 @@ in
       layer = "top";
       position = "top";
       height = 24;
+      # Gap between modules in modules-right -- without it they all sit
+      # flush against each other with only each one's own format padding
+      # between them.
+      spacing = 12;
       # Workspace indicators are opt-in here, unlike swaybar/i3bar where
       # they're just always part of the protocol.
       modules-left = [ "sway/workspaces" "sway/mode" ];
