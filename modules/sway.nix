@@ -49,6 +49,16 @@ in
   # default keybinding set (home-manager fills it in around this).
   wayland.windowManager.sway = {
     enable = true;
+    # SDDM's sway.desktop just execs bare `sway`, which resolves to this
+    # home-manager-installed package (user profile wins PATH over
+    # /run/current-system/sw) -- NOT the NixOS programs.sway package, so
+    # that module's own wrapperFeatures.gtk has no effect on what actually
+    # runs. This module's wrapperFeatures.gtk defaults to false, which is
+    # the real reason swaybar's tray can't decode SVG icons (fcitx5,
+    # nm-applet) and falls back to its red frowning-face placeholder --
+    # the GDK_PIXBUF_MODULE_FILE var that registers librsvg only gets set
+    # by this wrapper.
+    wrapperFeatures.gtk = true;
     config = {
       modifier = "Mod1"; # left Alt
       # Home-manager's sway module defaults terminal to foot; point it at

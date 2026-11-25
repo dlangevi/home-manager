@@ -21,11 +21,11 @@
   # no changes at all the next reboot would land on SDDM with no session to
   # offer. This is what that reboot needs to find.
   programs.sway.enable = true;
-  # swaybar decodes tray icons through gdk-pixbuf, which only handles SVG when
-  # librsvg's loader is on GDK_PIXBUF_MODULE_FILE. Modern icon themes ship
-  # SVG only, so without this every tray item renders as swaybar's red
-  # frowning-face placeholder. The gtk wrapper is what sets that variable.
-  programs.sway.wrapperFeatures.gtk = true;
+  # The actual swaybar-tray-icon GTK wrapper fix lives in the home-manager
+  # layer (modules/sway.nix, wayland.windowManager.sway.wrapperFeatures.gtk)
+  # -- SDDM's sway.desktop execs bare `sway`, which PATH resolves to the
+  # home-manager-installed package, not this NixOS one, so wrapperFeatures
+  # set here would never take effect.
   services.displayManager.defaultSession = "sway";
 
   # Power management: underpowered laptop, battery present (BAT0).
