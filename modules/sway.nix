@@ -225,7 +225,10 @@ in
       }
       {
         block = "net";
-        format = " $icon {$ssid $signal_strength|Wifi down} ";
+        # $icon already differs wired vs wireless, so leaning on it plus an
+        # ip fallback avoids a hardcoded "Wifi down" that misreports a live
+        # ethernet link (no ssid) as no connection at all.
+        format = " $icon {$ssid $signal_strength|$ip|down} ";
         click = [
           {
             button = "left";
