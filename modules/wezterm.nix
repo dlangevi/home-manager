@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, hostname, ... }:
 
 let
   # The same fleet tmux's domain menu reads, rendered as the Lua table this
@@ -58,7 +58,15 @@ in
       -- glium::ops::draw::draw -- wezterm's render call itself, not anything
       -- this file configures. WebGpu is a different renderer (wgpu/Vulkan)
       -- that does not go through that code path at all.
-      config.front_end = 'WebGpu'
+      --
+      -- chonk is the exception: its GPU (nouveau, an NVIDIA GT218 -- Tesla
+      -- generation, ~2010) has no Vulkan driver at all (nouveau's Vulkan
+      -- driver, NVK, only supports Turing and later), so WebGpu silently fell
+      -- back to a CPU software rasterizer there -- measured: wezterm alone at
+      -- 200%+ CPU just from typing. nouveau's classic OpenGL (Gallium3D)
+      -- driver has supported this chip for well over a decade, so the
+      -- default front end is what actually uses the GPU on this machine.
+      config.front_end = '${if hostname == "chonk" then "OpenGL" else "WebGpu"}'
 
       -- Workaround for an unfixed upstream Wayland bug
       -- (github.com/wezterm/wezterm/issues/6463): on sway/wlroots, the
