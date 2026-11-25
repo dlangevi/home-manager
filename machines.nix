@@ -1,5 +1,5 @@
 {
-  "chonk" = [ "base" "desktop-apps" ];
+  "chonk" = [ "base" "desktop-apps" "herd" ];
   "console"  = [ "base" "desktop-apps" "mpd-client" "soulseek" "herd" "wake-suspense" ];
   "dance"    = [ "base" "desktop-apps" "streaming" "music-server" "snapclient" "mpd-client" "herd" ];
   # slskd (nixos/modules/slskd.nix) is the acquisition backend for
