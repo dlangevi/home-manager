@@ -28,11 +28,12 @@
         id = "S6JACA5-QCNDCOX-BDBGHPT-UXV46DN-NYSJKDM-3IGID3O-25VXIYC-N6RL4AN";
         addresses = [ "tcp://dance:22000" ];
       };
+      chonk.id = "Z2KEBN2-REQX6WZ-TL7AIFW-TZNO6JC-5UWZZNO-V6BVUGB-TACNV2T-F5YEMAA";
     };
     settings.folders."sync" = {
       label = "Sync";
       path = "${config.home.homeDirectory}/Sync";
-      devices = [ "console" "suspense" "dance" ];
+      devices = [ "console" "suspense" "dance" "chonk" ];
     };
   };
 }
