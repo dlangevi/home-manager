@@ -114,4 +114,29 @@
   # this box still costs a few percent an hour. Switch to
   # "suspend-then-hibernate" if waking from a short close is too slow.
   services.logind.lidSwitch = "hibernate";
+
+  # Kindle Scribe over MTP, for calibre.
+  #
+  # Calibre's MTP driver is libmtp, which talks to the raw USB device
+  # through libusb -- it does not go through gvfs or a filesystem mount, so
+  # it needs write access to /dev/bus/usb/<bus>/<dev> itself. Those nodes
+  # default to root:root 0664, so libusb_open() returns EACCES and calibre
+  # reports `Unable to open MTP device`. Observed 2026-11-15: node
+  # /dev/bus/usb/001/016 for 1949:9981 was crw-rw-r-- root root.
+  #
+  # Nothing on this host ships libmtp's own rules -- its 69-libmtp.rules
+  # only reaches udev's search path via services.udev.packages -- and the
+  # Scribe is recent enough that being listed there is not something to
+  # rely on. One explicit rule for the device actually in hand is the
+  # smaller thing to carry.
+  #
+  # GROUP/MODE rather than TAG+="uaccess": extraRules are written to
+  # 99-local.rules, which runs after systemd's 73-seat-late.rules where the
+  # uaccess builtin is invoked, so the tag would be set too late to do
+  # anything. GROUP and MODE are assignments collected across all rules and
+  # applied when the node is created, so ordering does not matter for them.
+  # dlangevi's primary group here is "users".
+  services.udev.extraRules = ''
+    SUBSYSTEM=="usb", ATTR{idVendor}=="1949", ATTR{idProduct}=="9981", GROUP="users", MODE="0660"
+  '';
 }
