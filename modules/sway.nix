@@ -21,6 +21,21 @@ let
     '';
   };
 
+  # fcitx5's own notification mechanism isn't wired to a waybar signal, so
+  # this polls fcitx5-remote -n (the active input method's unique name)
+  # once a second -- same simplicity/interval as the clock module below,
+  # not worth a background watcher just to make this event-driven.
+  fcitx5Status = pkgs.writeShellApplication {
+    name = "fcitx5-waybar-status";
+    runtimeInputs = [ pkgs.fcitx5 ];
+    text = ''
+      case "$(fcitx5-remote -n)" in
+        pinyin) echo "拼" ;;
+        *) echo "EN" ;;
+      esac
+    '';
+  };
+
   # Both session agents below are scoped to sway-session.target rather than
   # graphical-session.target. suspense selects *both* the `plasma` and `sway`
   # features, so a graphical-session binding would also start these inside a
@@ -247,6 +262,7 @@ in
       modules-left = [ "sway/workspaces" "sway/mode" ];
       "sway/workspaces".disable-scroll = false;
       modules-right = [
+        "custom/fcitx5"
         "battery"
         "network"
         "bluetooth"
@@ -255,6 +271,14 @@ in
         "tray"
         "clock"
       ];
+
+      "custom/fcitx5" = {
+        exec = "${fcitx5Status}/bin/fcitx5-waybar-status";
+        interval = 1;
+        # Same toggle Control+space triggers, for a mouse click.
+        on-click = "${pkgs.fcitx5}/bin/fcitx5-remote -t";
+        tooltip = false;
+      };
 
       battery = {
         # suspense has no battery; blur and chonk do. Waybar's battery
@@ -334,7 +358,7 @@ in
          these is its own widget id, with nothing shared to hang a single
          rule off, hence the explicit list. Skips #battery since the
          workspace/mode gap already reads as a separator there. */
-      #network, #bluetooth, #backlight, #pulseaudio, #tray, #clock {
+      #custom-fcitx5, #network, #bluetooth, #backlight, #pulseaudio, #tray, #clock {
         padding: 0 12px;
         border-left: 1px solid #707880;
       }
