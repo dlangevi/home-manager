@@ -9,6 +9,26 @@
   networking.hostName = "suspense";
   system.stateVersion = "23.11";
 
+  # Narrow NOPASSWD so Claude sessions iterating on Wolf's config
+  # (~/auto/gaming/wolf-state, root-owned cfg/ dir -- see the Wolf block
+  # below) don't need a human typing a password mid-session. Scoped to
+  # exactly these two commands, not a blanket docker-wolf/cp grant.
+  security.sudo.extraRules = [
+    {
+      users = [ "dlangevi" ];
+      commands = [
+        {
+          command = "${pkgs.coreutils}/bin/cp /home/dlangevi/auto/gaming/wolf-state/config.toml /home/dlangevi/auto/gaming/wolf-state/cfg/config.toml";
+          options = [ "NOPASSWD" ];
+        }
+        {
+          command = "${pkgs.systemd}/bin/systemctl restart docker-wolf.service";
+          options = [ "NOPASSWD" ];
+        }
+      ];
+    }
+  ];
+
   # The 17G swap partition declared in ../hardware/suspense.nix is an OOM
   # safety valve for build spikes, not a way to pretend there is more RAM than
   # there is -- 32G should be used as 32G. The kernel default of 60 is tuned
@@ -230,7 +250,64 @@
 
   # Requires the nvidia driver, already selected via
   # services.xserver.videoDrivers above.
-  hardware.nvidia-container-toolkit.enable = true;
+  hardware.nvidia-container-toolkit = {
+    enable = true;
+
+    # The driver's own CDI mounts (libcuda.so.1 etc, added automatically by
+    # the module) are enough to create a CUDA context, but GStreamer's
+    # nvcodec plugin also dlopens libnvrtc.so (NVIDIA's runtime compiler,
+    # part of the CUDA *toolkit*, not the driver) to build its
+    # cudaconvertscale element -- confirmed live via `journalctl -u
+    # docker-wolf`: "Could not open nvrtc library libnvrtc.so" ->
+    # "no such element factory 'cudaconvertscale'!" -> falls back whole-hog
+    # to software x264/x265/aom encode. Upstream's own fix for the same
+    # report (games-on-whales/wolf#370, manual-driver-volume setups) is to
+    # drop libnvrtc alongside the driver's other libraries, but that
+    # specific placement doesn't work here: addDriverRunpath.driverLink's
+    # "lib" dir is itself a read-only bind mount inside the container, and
+    # Docker can't create a nested mountpoint file inside an already
+    # read-only mount -- confirmed live, "make mountpoint
+    # /run/opengl-driver/lib/libnvrtc.so mount: ... read-only file system",
+    # which crash-looped the container on every start. Mount nvrtc into its
+    # own fresh directory instead (/opt/nvidia-nvrtc, arbitrary, just has to
+    # not collide with anything else mounted into this container) and point
+    # LD_LIBRARY_PATH at it in the container's `environment` below -- no
+    # nesting, so no mountpoint conflict.
+    mounts =
+      let
+        nvrtcLib = "${pkgs.cudaPackages.cuda_nvrtc.lib}/lib";
+      in
+      map (f: {
+        hostPath = "${nvrtcLib}/${f}";
+        containerPath = "/opt/nvidia-nvrtc/${f}";
+      }) [
+        "libnvrtc.so"
+        "libnvrtc.so.12"
+        "libnvrtc.so.12.9.86"
+        # nvrtc dlopens this by its own short name at compile time ("Make
+        # sure that libnvrtc-builtins.so.12.9 is installed correctly") --
+        # it's the symbol-definitions half of the runtime compiler, not
+        # optional. Confirmed live: without it, nvrtc loads fine but every
+        # compile fails with ret 7 and cudaconvertscale still never
+        # registers.
+        "libnvrtc-builtins.so"
+        "libnvrtc-builtins.so.12.9"
+        "libnvrtc-builtins.so.12.9.86"
+      ];
+  };
+
+  # Wolf tries to self-detect which container it's running in (parsing
+  # /proc/self/mountinfo for a Docker-style container ID) so it can replicate
+  # its own bind mounts into the per-app containers it spawns -- this is how
+  # the Wayland socket and GOW_REQUIRED_DEVICES get wired into things like
+  # "Wolf UI" without declaring every path by hand. That detection is
+  # Docker-specific; under the default podman backend it fails ("No valid
+  # container ID found in mountinfo, are we running in Docker?" / "automatic
+  # mounts matching is disabled"), and every container-spawning app fails
+  # with "Can't connect to a Wayland display" even though Wolf's own log
+  # says the display is ready. Force the real Docker backend so Wolf can see
+  # itself the way upstream expects.
+  virtualisation.oci-containers.backend = "docker";
 
   virtualisation.oci-containers.containers.wolf = {
     image = "ghcr.io/games-on-whales/wolf:stable";
@@ -243,12 +320,74 @@
     environment = {
       WOLF_INTERNAL_IP = "10.0.70.116";
       WOLF_INTERNAL_MAC = "70:85:c2:54:95:95";
+      # Makes the nvrtc libs mounted at /opt/nvidia-nvrtc (see
+      # hardware.nvidia-container-toolkit.mounts above) findable by name --
+      # they're off the image's normal ld.so.cache path, and dlopen() only
+      # honours LD_LIBRARY_PATH, not an on-the-fly ldconfig run (nothing in
+      # this container re-runs ldconfig after start). /run/opengl-driver/lib
+      # is included too even though libcuda.so.1 already loads fine without
+      # it -- that one's apparently found via the image's baked-in
+      # ld.so.cache, but there's no guarantee that survives an image bump,
+      # so make it explicit rather than relying on an accident.
+      LD_LIBRARY_PATH = "/opt/nvidia-nvrtc:/run/opengl-driver/lib";
+      # Confirmed live: selecting a game from inside the Wolf UI picker (a
+      # second app launching while Wolf UI's own session is still up)
+      # dropped the Moonlight connection outright ("[API] Error reading
+      # request: End of file", Wolf-UI container stopped and restarted from
+      # scratch) with zero trace of the target app ever starting. Matches a
+      # known upstream bug (games-on-whales/wolf#501): the zero-copy NVIDIA
+      # pipeline crashes on a second concurrent app container; the
+      # confirmed workaround is forcing the legacy (non-zero-copy) pipeline
+      # instead. Costs an extra GPU copy per frame -- immaterial next to
+      # the encode cost already happening every frame regardless.
+      WOLF_USE_ZERO_COPY = "FALSE";
     };
     volumes = [
       # Wolf's state dir (config.toml, apps.toml, per-profile save data).
       # Lives under auto/gaming, not in this repo or in /etc -- see the
       # comment above.
       "/home/dlangevi/auto/gaming/wolf-state:/etc/wolf:rw"
+      # Process-runner apps (Hookshot, Donkey Kong Bananza -- see
+      # wolf-state/config.toml) exec *inside this container*, not on the
+      # bare host, confirmed live: "Unable to start process, error: 2 -
+      # execve failed: No such file or directory" the first time run_cmd
+      # pointed at a host-only path. These two mounts are what makes that
+      # actually resolve:
+      #   - the games themselves, their installs, and their save
+      #     directories, all addressed by the same absolute path inside the
+      #     container as on the host (the launch scripts under
+      #     wolf-state/scripts hardcode these paths rather than using
+      #     $HOME, since $HOME inside this container is root's, not
+      #     dlangevi's)
+      #   - the Nix store read-only, since both games are native closures
+      #     whose ELF interpreter and whose play.sh LD_LIBRARY_PATH are raw
+      #     /nix/store/... paths -- self-contained once the store itself is
+      #     visible, regardless of this container's own (Fedora-based)
+      #     userland
+      "/home/dlangevi/storage/games:/home/dlangevi/storage/games:rw"
+      # Hookshot's own internals (builder-version detection) and
+      # oot_saves.py's default search path both fall back to
+      # $HOME/.local/share when not told otherwise -- that's where
+      # Hookshot's actual live save lives (~/.local/share/hookshot/save/),
+      # distinct from the install dir under storage/games above.
+      "/home/dlangevi/.local/share:/home/dlangevi/.local/share:rw"
+      # NVIDIA's own on-disk shader cache defaults to here
+      # (~/.cache/nvidia/GLCache). Without this mount it doesn't exist
+      # inside the container at all, so every container restart the driver
+      # logs "driver shader cache at the start: 0 MB (no folder found)" and
+      # recompiles every shader from scratch instead of reusing what a
+      # previous session already compiled -- confirmed live, ~40k shaders /
+      # ~6.5s of load every single launch. On the real desktop session this
+      # directory is the persistent one, which is why the game never used
+      # to re-warm on every start.
+      "/home/dlangevi/.cache:/home/dlangevi/.cache:rw"
+      "/nix/store:/nix/store:ro"
+      # The launch scripts also shell out to python3 (oot_saves.py) and
+      # rsync by absolute path under here rather than relying on this
+      # container's own PATH, which has neither -- same self-contained
+      # reasoning as above, and this path is stable across store-path
+      # changes from a rebuild the way a bare /nix/store/<hash> path isn't.
+      "/run/current-system/sw:/run/current-system/sw:ro"
       # Wolf spawns its own per-app Docker containers (Wolf UI, any
       # Docker-runner apps), so it needs to talk to the host's Docker
       # daemon itself -- this is upstream's documented design, not an
@@ -261,6 +400,16 @@
       # container's mount source never exists on the real host, and Wolf UI
       # fails immediately with "[CURL] Could not connect to server".
       "/var/run/wolf:/var/run/wolf:rw"
+      # Wolf's own Wayland/compositor socket for each session lives here;
+      # upstream's docker-compose shares it as a volume for exactly this
+      # reason. Without a host bind mount, Wolf writes it inside its own
+      # container's private /tmp, so when Wolf asks Docker to mount
+      # "/tmp/sockets" into a spawned app container (e.g. Wolf UI), the host
+      # has nothing there -- the app gets an empty directory and fails with
+      # "Can't connect to a Wayland display" even though Wolf's own log says
+      # the display is ready. Same root cause as the wolf.sock fix above,
+      # different socket.
+      "/tmp/sockets:/tmp/sockets:rw"
       "/dev/:/dev/:rw"
       "/run/udev:/run/udev:rw"
     ];
@@ -288,6 +437,14 @@
       "--device-cgroup-rule=c 13:* rmw"
     ];
   };
+
+  # Unlike Docker, podman's bind mounts don't auto-create a missing source
+  # directory on the host -- it fails the whole container start with "statfs
+  # /tmp/sockets: no such file or directory" instead. Needed for the
+  # /tmp/sockets volume above.
+  systemd.tmpfiles.rules = [
+    "d /tmp/sockets 0755 root root -"
+  ];
 
   # Resilio Sync removed. It was the single loudest thing on this machine:
   # rslsync runs with its debug log mask at FFFFFFFF and wrote 11307 of the
@@ -489,6 +646,10 @@
       KERNEL=="uhid", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uhid"
       SUBSYSTEMS=="hidraw", ACTION=="add", MODE="0660", GROUP="console"
       SUBSYSTEM=="sound", ACTION=="add", ATTRS{idVendor}=="8888", ATTRS{idProduct}=="1717", TAG+="systemd", ENV{SYSTEMD_WANTS}+="fosi-mc331-mixer.service"
+      # Nintendo Switch RCM/SDK-debugger USB modes (NS-USBloader, fusee-nano,
+      # etc. all talk to this raw device node directly, no driver involved).
+      SUBSYSTEM=="usb", ATTRS{idVendor}=="0955", ATTRS{idProduct}=="7321", MODE="0666"
+      SUBSYSTEM=="usb", ATTRS{idVendor}=="057e", ATTRS{idProduct}=="3000", MODE="0666"
   '';
 
   users.groups.console = { };
@@ -670,6 +831,16 @@
     kdePackages.partitionmanager
     gparted
     piper
+    # Referenced by absolute path (/run/current-system/sw/bin/...) from the
+    # Wolf launch scripts under ~/auto/gaming/wolf-state/scripts -- confirmed
+    # live that neither was actually a stable guarantee before this: a later
+    # generation came up without python3 in sw/bin at all ("No such file or
+    # directory", exit 127), because nothing had ever declared it as a real
+    # system package -- it was just incidentally present via some other
+    # derivation's closure. Declaring both here is what makes the path
+    # survive a rebuild rather than depending on an accident.
+    python3
+    rsync
   ];
 
   services.ratbagd.enable = true;
