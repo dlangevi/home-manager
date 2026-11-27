@@ -435,6 +435,14 @@
       "--device=/dev/uinput"
       "--device=/dev/uhid"
       "--device-cgroup-rule=c 13:* rmw"
+      # Docker's default seccomp profile blocks userfaultfd (EPERM; adding
+      # CAP_SYS_PTRACE does not lift it, only seccomp=unconfined does -- both
+      # checked with a throwaway container). DKB Recomp uses it to watch
+      # which guest pages the CPU wrote; without it no GPU-side mirrors are
+      # built and the game falls to ~9 fps. Process-runner apps run inside
+      # this container, so it has to be lifted here. The container already
+      # has docker.sock and /dev, so little sandbox is lost.
+      "--security-opt=seccomp=unconfined"
     ];
   };
 
